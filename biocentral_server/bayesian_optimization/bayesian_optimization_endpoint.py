@@ -159,8 +159,8 @@ def train_and_inference():
             "database_hash": "hello",
             "model_type": "gaussian_process",
             "discrete": false,
-            "target_interval_lb": 100,
-            "target_interval_ub": 2000,
+            "target_interval_lb": -Infinity,
+            "target_interval_ub": 200.4,
             "value_preference": "neutral",
             "coefficient": 0.7
         }

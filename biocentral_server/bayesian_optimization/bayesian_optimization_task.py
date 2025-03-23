@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Dict, Callable
 from biotrainer.protocols import Protocol
 import yaml
-from .botraining import botrain, SUPPORTED_MODELS
+from .botraining import mockoutput, SUPPORTED_MODELS
 
 from ..embeddings import EmbeddingTask
 from ..server_management import TaskInterface, EmbeddingsDatabase, TaskDTO
@@ -33,7 +33,7 @@ class BayesTask(TaskInterface):
     def run_task(self, update_dto_callback: Callable) -> TaskDTO:
         self._pre_embed_with_db()
         self.biotrainer_process = mp.Process(
-            target=botrain, args=(str(self.output_dir / "config.yaml"),)
+            target=mockoutput, args=(str(self.output_dir / "config.yaml"),)
         )
         self.biotrainer_process.start()
         while self.biotrainer_process.is_alive():

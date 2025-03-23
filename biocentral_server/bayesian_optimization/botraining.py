@@ -20,7 +20,7 @@ SUPPORTED_MODELS = ["gaussian_process"]
 
 
 # consider error handling
-def botrain(config_path: str):
+def mockoutput(config_path: str):
     print(f"in botrain: {config_path}")
     config_dict = load_config_from_yaml(config_path)
     # print(config_dict)
