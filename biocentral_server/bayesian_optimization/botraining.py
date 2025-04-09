@@ -175,7 +175,6 @@ def data_prep(config_dict: dict, allow_empty_inference: bool = False) -> tuple[d
         )
     # train & test set split
     train_data, inference_data = get_datasets(config_dict, seqs)
-    # TODO: consider approach for testing where no inference data is fed
     if not allow_empty_inference and len(train_data['ids']) * len(inference_data) == 0:
         raise ValueError("data_prep: training set / inference set is empty")
     return train_data, inference_data, seqs
@@ -199,17 +198,12 @@ def train_and_inference_regression(train_data, inference_data, config_dict):
     # Y = x^Tw + eps
     prediction_dist = likelihood(model(inference_data['X']))
 
-    # todo: add lossy marginalization approach 
     marginal_dist = torch.distributions.Normal(
         prediction_dist.mean, prediction_dist.covariance_matrix.diag().sqrt()
     )
     prob = marginal_dist.cdf(
         torch.Tensor([config_dict["target_interval_ub"]])
     ) - marginal_dist.cdf(torch.Tensor([config_dict["target_interval_lb"]]))
-    # prob = gp.MC_sampling(
-    #     prediction_dist,
-    #     config_dict["target_interval_lb"], config_dict["target_interval_ub"],
-    # )
     # scale probability to mean
     score = prob * (prediction_dist.mean.mean())
     # acquisition: weighted average of prob and mean
@@ -228,10 +222,7 @@ def pipeline(config_path: str):
     if validation:
         train_data, inference_data = val_dataset_split(train_data)
         train_data = data_trunc(train_data, 6000) # my memory can't handle too much data
-    # train model
-    # inference result
-    # add with acquisition function score
-    # print('Data finished')
+    # train model, inference and add with acquisition function score
     if config_dict['discrete']: # TODO: classification
         model, likelihood = gp.trainGPClsModel(train_data)
     else:
