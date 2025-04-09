@@ -30,6 +30,7 @@ class BayesTask(TaskInterface):
 
     def run_task(self, update_dto_callback: Callable) -> TaskDTO:
         self._pre_embed_with_db()
+        print("finish embedding task")
         self.biotrainer_process = mp.Process(
             target=pipeline, args=(str(self.output_dir / "config.yaml"),)
         )

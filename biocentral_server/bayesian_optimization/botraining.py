@@ -77,9 +77,12 @@ def parse_description_to_label(description: str, isregression: bool, feature_nam
         if (len(kv) != 2):
             continue
         if kv[0].lower() == feature_name.lower():
-            feature_value = kv[1] if kv[1].lower() != 'unknown' else None
-            if isregression:
-                feature_value = float(feature_value) 
+            feature_value = kv[1] if kv[1].lower() != 'unknown' and len(kv[1]) != 0 else None
+            if isregression and feature_value is not None:
+                try:
+                    feature_value = float(feature_value)
+                except:
+                    raise KeyError(f"not supported regression label: {feature_value}")
             break
     return feature_value
 
