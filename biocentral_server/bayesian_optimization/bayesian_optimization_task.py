@@ -10,8 +10,6 @@ from .botraining import mockoutput, SUPPORTED_MODELS
 from ..embeddings import EmbeddingTask
 from ..server_management import TaskInterface, EmbeddingsDatabase, TaskDTO
 
-import numpy as np
-
 """
 BOtraining process wrapper
 - init: store all process arguments
@@ -42,9 +40,10 @@ class BayesTask(TaskInterface):
 
     def _pre_embed_with_db(self):
         sequence_file_path = self.config_dict["sequence_file"]
-        embedder_name = "one_hot_encoding"  # self.config_dict.pop("embedder_name")
+        embedder_name = self.config_dict.get("embedder_name", "one_hot_encoding")
+        if 'embedder_name' in self.config_dict.keys():
+            self.config_dict.pop("embedder_name")
         protocol = Protocol.sequence_to_class  # per sequence protocol should be fine
-        # self.config_dict["protocol"]
         device = self.config_dict.get("device", None)
         output_path = self.output_dir / "embeddings.h5"
         with tempfile.TemporaryDirectory() as temp_embeddings_dir:

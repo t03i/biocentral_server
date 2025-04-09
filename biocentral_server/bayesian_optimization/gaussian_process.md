@@ -1,0 +1,66 @@
+
+## Regression with Gaussian Process
+
+#### Bayesian Regression
+##### Modeling
+Suppose we have observation $\mathcal{D}=\{(x_i,y_i)\}_N$, and model the Y as 
+
+$y=x^Tw+\epsilon$, where $\epsilon \sim \mathcal{N}(0,\delta)$
+
+Bayesian approach is about obtaining the weight distribution $p(w|X, Y)$. 
+
+We know from independence of w and X, and bayseian theorem, posterior distribution is propotional to <u>likelihood</u> (observation distribution given weight), and <u>prior</u> belief,
+$$
+p(w|X, Y) \propto p(Y|X,w)p(w|X)=p(Y|X,w)p(w)
+$$
+##### Training
+To get weight posterior distribution, we need to compute likelihood and combine it with prior.
+First, likelihood distribution of vector Y can be derived from distribution of iid. distributed $y_i$ and some vectorization technique.
+$$
+\begin{aligned}
+p(Y|X,w)
+&=\prod_{i=0}^N p(y_i|x_i,w)\\
+&=\prod_{i=0}^N\frac{1}{\sqrt{2\pi}\sigma}\exp{(-\frac{(y_i-x_i^Tw)^2}{2\sigma^2})}\\
+&=\frac{1}{(2\pi)^{N/2}\sigma^N}\exp{(-\sum_{i=1}^N
+\frac{(y_i-x_i^Tw)^2}{2\sigma^2})}\\
+&=\frac{1}{(2\pi)^{N/2}\sigma^N}\exp{(-\frac{1}{2\sigma^2}\sum_{i=1}^N
+(y_i-x_i^Tw)^2)}\\
+&=\frac{1}{(2\pi)^{N/2}\sigma^N}\exp{(-\frac{1}{2\sigma^2}
+(Y-Xw)^T(Y-Xw)
+)}\\
+&=\mathcal{N}(Xw,\sigma^2 I)
+\end{aligned}
+$$
+We assume $\mathbf{w}$ also follows multivariate normal distribution $\mathbf{w}\sim \mathcal{N}(0,\Sigma_w)$, and we know production of two gaussian is another gaussian. So posterior distribution is 
+$$
+w \mid y \sim \mathcal{N}(\mu_{\text{post}}, \Sigma_{\text{post}})
+$$ 
+with
+$$
+\Sigma_{\text{post}} = \left(\frac{1}{\sigma^2}X^\top X + \Sigma_w^{-1}\right)^{-1},\quad \mu_{\text{post}} = \Sigma_{\text{post}}\left(\frac{1}{\sigma^2}X^\top y\right).
+$$
+##### Inference
+We have taken the bayesian approach to model weight as a distribution, so the inference based on weight is also a distribution
+p() 
+#### More expressiveness: Bayesian regression in feature space
+Linear models are unable to fit non-linear target function. Inspired by Taylor's theorem that each continuous function can be approximated by a infinite series of polynomial, non-linear function can be approximated by linear regression on feature space constructed by n-order polynomials. 
+
+As feature mapping depends only on X, all the derivations we made above still hold, except input X is replaced by features $\Phi$.
+
+$$
+\begin{aligned}
+p(f_x|x_*,X,y) 
+\sim \mathcal{N}(
+    &\phi^{T}_*\Sigma_p(K+\sigma_n^2I)^ {-1}y, \\
+    &\phi_*^T \Sigma_p \phi_* - \phi_*^T \Sigma_p{\phi} (K+\sigma_n^2I)^ {-1} \phi^T \Sigma_p \phi_*)
+\end{aligned}
+$$
+Where $K=\Phi^T\Sigma_p\Phi$. 
+Noticed feature space always enter in form of $\phi^T\Sigma_p\phi$, $\phi_*^T\Sigma_p\phi$, or $\phi_*^T\Sigma_p\phi_*$. 
+To simplify computation, mapping and dot product can be unified into 
+$$k(x,x')=\phi(x)^T\Sigma_p\phi(x')$$
+Which is called kernel function. When an algorithm solely rely on terms of inner product in feature space, it can be lifted into feature space by replacing inner products with kernel function call. This is a common approach called kernel trick.
+
+This technique is particularly valuable in situations where it is more convenient to compute the kernel than the feature vectors themselves. 
+
+#### Bayesian Classification

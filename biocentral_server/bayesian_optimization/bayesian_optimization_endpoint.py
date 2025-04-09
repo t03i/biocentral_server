@@ -48,6 +48,8 @@ def verify_config(config_dict: dict):
     - `databsase_hash :: str`
     - `model_type = "gaussian_process"`
     - `coefficient :: float` in `[0, 1]`
+    ### Optional arguent
+    - `embedder_name :: str`, default: `one_hot_encoding`
     #### Configurating optimization target
     - `discrete :: bool`
     - When `discrete = true`
@@ -209,12 +211,10 @@ def train_and_inference():
     try:
         files = file_manager.get_file_paths_for_biotrainer(
             database_hash=database_hash,
-            embedder_name="one_hot_encoding",
+            embedder_name=config_dict.get("embedder_name", "one_hot_encoding"),
             protocol=Protocol.sequence_to_class,
         )
-        config_dict["sequence_file"] = files[
-            0
-        ]  # currently raw fasta file that contain everything
+        config_dict["sequence_file"] = files[0]
     except FileNotFoundError as e:
         return jsonify({"error": str(e)})
     # launch process
@@ -302,7 +302,6 @@ def model_results():
     ):
         return jsonify({"error": "Invalid task_id"})
     task_status = task_manager.get_task_status(task_id)
-    # print(TaskManager().get_task_dto(task_id))
     # make distinction
     if task_status != TaskStatus.FINISHED:
         return jsonify(

@@ -6,3 +6,4 @@
 /poetry.lock
 /releases/
 __pycache__/
+*ipynb
