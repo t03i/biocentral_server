@@ -30,11 +30,11 @@ class BayesTask(TaskInterface):
 
     def run_task(self, update_dto_callback: Callable) -> TaskDTO:
         self._pre_embed_with_db()
-        print(f"embedding finish for dataset {self.config_dict['dataset_hash']}")
         self.biotrainer_process = mp.Process(
             target=pipeline, args=(str(self.output_dir / "config.yaml"),)
         )
         self.biotrainer_process.start()
+        # TODO: allow progress report?
         while self.biotrainer_process.is_alive():
             time.sleep(1)
         return TaskDTO.finished({})
@@ -42,6 +42,7 @@ class BayesTask(TaskInterface):
     def _pre_embed_with_db(self):
         sequence_file_path = self.config_dict["sequence_file"]
         embedder_name = self.config_dict.get("embedder_name", "one_hot_encoding")
+        print(f"embedder: {embedder_name}")
         if 'embedder_name' in self.config_dict.keys():
             self.config_dict.pop("embedder_name")
         protocol = Protocol.sequence_to_class  # per sequence protocol should be fine

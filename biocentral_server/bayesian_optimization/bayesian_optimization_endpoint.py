@@ -6,17 +6,16 @@ from flask import current_app
 import logging
 from flask import request, jsonify, Blueprint
 
+from biocentral_server.utils import str2bool
 from biotrainer.protocols import Protocol
-from biotrainer.config import Configurator, ConfigurationException
 import yaml
 
-from .bayesian_optimization_task import BayesTask
+from biocentral_server.bayesian_optimization.bayesian_optimization_task import BayesTask
 
-from ..server_management import (
+from biocentral_server.server_management import (
     TaskManager,
     UserManager,
     FileManager,
-    StorageFileType,
     TaskStatus,
 )
 
@@ -43,6 +42,26 @@ bayesian_optimization_service_route = Blueprint(
     "bayesian_optimization_service", __name__
 )
 
+def print_io(func):
+    def wrapped_func(*args):
+        ret = func(*args)
+        print(f'{func.__name__}({args}) = {ret}')
+        return ret
+    return wrapped_func
+        
+# @print_io
+def float_if_possible(num):
+    mapping = {
+        "Infinity" : float('inf'),
+        "-Infinity" : float('-inf'),
+    }
+    if num in mapping:
+        return mapping[num]
+    try:
+        num = float(num)
+    except:
+        pass
+    return num
 
 def verify_config(config_dict: dict):
     """
@@ -68,7 +87,8 @@ def verify_config(config_dict: dict):
     """
     database_hash: str = config_dict.get("database_hash")
     model_type: str = config_dict.get("model_type").lower()
-    coefficient: float = config_dict.get("coefficient")
+    coefficient = float_if_possible(config_dict.get("coefficient"))
+    config_dict['coefficient'] = coefficient
     if (
         not isinstance(database_hash, str)
         or not isinstance(model_type, str)
@@ -83,13 +103,16 @@ def verify_config(config_dict: dict):
         )
     if coefficient > 1 or coefficient < 0:
         raise ValueError("[verify_config]: Coefficient should fall in range [0, 1]")
-    verify_optim_target(config_dict)
+    return verify_optim_target(config_dict)
 
 
 def verify_optim_target(config_dict: dict):
     is_discrete: bool = config_dict.get("discrete")
     if is_discrete is None:
         raise KeyError("[verify_config]: Config need to include: is_discrete :: bool")
+    if isinstance(is_discrete, str):
+        is_discrete = str2bool(is_discrete)
+        config_dict['discrete'] = is_discrete
     if is_discrete:
         labels = config_dict.get("discrete_labels")
         targets = config_dict.get("discrete_targets")
@@ -101,11 +124,14 @@ def verify_optim_target(config_dict: dict):
         if not (sl.issuperset(st) and len(sl) > len(st)):
             raise ValueError("[verify_config]: targets should be true subset of labels")
     else:
-        lb = config_dict.get("target_interval_lb")
-        ub = config_dict.get("target_interval_ub")
-        if not (lb and ub):
+        lb = float_if_possible(config_dict.get("target_interval_lb"))
+        config_dict['target_interval_lb'] = lb
+        ub = float_if_possible(config_dict.get("target_interval_ub"))
+        config_dict['target_interval_ub'] = ub
+        if not (lb and ub and isinstance(lb, float) and isinstance(ub, float)):
             raise KeyError(
-                "[verify_config]: Config for continuous target need to include target_interval_lb and target_interval_ub field"
+                "[verify_config]: Config for continuous target need to include " \
+                "target_interval_lb :: float and target_interval_ub :: float"
             )
         if lb >= ub:
             raise ValueError(
@@ -120,6 +146,7 @@ def verify_optim_target(config_dict: dict):
             raise KeyError(
                 "[verify_config]: Config for continuous target need to include value_preference that allow maximize, minimize, or neutral strategy"
             )
+    return config_dict
 
 def get_next_log_file():
     """Creates a log filename with the next available number."""
@@ -195,15 +222,16 @@ def train_and_inference():
 
     """
     # verify configuration dict
+    print("In endpoint")
     config_dict: dict = request.get_json()
-    logging.basicConfig(
-    level=logging.INFO,
-    format='%(message)s',
-    handlers=[
-        logging.FileHandler("logs/output.log"),
-        logging.StreamHandler(sys.stdout)
-    ]
-    )
+    # logging.basicConfig(
+    # level=logging.INFO,
+    # format='%(message)s',
+    # handlers=[
+    #     logging.FileHandler("logs/output.log"),
+    #     logging.StreamHandler(sys.stdout)
+    # ]
+    # )
     print(f"Request train_and_inference: \n {config_dict}")
     try:
         verify_config(config_dict)
@@ -287,7 +315,6 @@ def model_results():
 
     ### Examples
     Example request
-
         {
             "database_hash": "hello",
             "task_id": "biocentral-bayesian_optimization-a2ec2679c8b88fa808583ccd39e6adac"
@@ -344,7 +371,3 @@ def model_results():
     with out_file.open("r") as f:
         results_data = yaml.load(f, Loader=yaml.FullLoader)
         return jsonify(results_data)
-    # model_file_dict = file_manager.get_biotrainer_result_files(
-    #     database_hash=database_hash, model_hash=task_id
-    # )
-    # return jsonify(model_file_dict)
