@@ -13,24 +13,28 @@ This endpoint takes a configuration dictionary, validates it, and starts
 
 #### Request
 POST with JSON body containing:
-- database_hash (str): Identifier for the sequence database
-- model_type (str): Type of model (currently only "gaussian_process")
-- coefficient (float): Value between 0-1 controlling exploration vs. exploitation
-- discrete (bool): Whether target is discrete or continuous
+- `database_hash` (str): Identifier for the sequence database
+- `model_type` (str): Type of model (currently only `gaussian_process`)
+- `coefficient` (float): Value between 0-1 controlling exploration vs. exploitation
+- `discrete` (bool): Whether target is discrete or continuous
+Optional Arguments:
+- `embedder_name` (str): name of embedder, default: `one_hot_encoding`
+- `device` (str): device, default: `None`
+- `feature_name` (str): case insensitive name of feature in description of `.fasta` file, default: `TARGET`
 
 For discrete targets:
-- discrete_labels (list): All possible labels
-- discrete_targets (list): Subset of labels that are targets
+- `discrete_labels` (list): All possible labels
+- `discrete_targets` (list): Subset of labels that are targets
 
 For continuous targets:
-- target_interval_lb (float): Lower bound of target interval
-- target_interval_ub (float): Upper bound of target interval
-- value_preference (str): Strategy for scoring ("maximize", "minimize", or "neutral")
+- `target_interval_lb` (float): Lower bound of target interval
+- `target_interval_ub` (float): Upper bound of target interval
+- `value_preference` (str): Strategy for scoring ("maximize", "minimize", or "neutral")
 
 #### Returns
 JSON with:
-- task_id (str): Unique identifier for tracking the task
-- error (str, optional): Error message if request is invalid
+- `task_id` (str): Unique identifier for tracking the task
+- `error` (str, optional): Error message if request is invalid
 #### Examples
 Example for float / bool as string
 ``` json
@@ -85,16 +89,16 @@ If so, returns sequences ordered descending by its score.
 
 #### Request
 POST with JSON body containing:
-- database_hash (str): Identifier for the sequence database
-- task_id (str): Task identifier returned from the training endpoint
+- `database_hash` (str): Identifier for the sequence database
+- `task_id` (str): Task identifier returned from the training endpoint
 
 #### Returns
 If successful: JSON array of ranked results, each containing:
-- id (str): Sequence identifier
-- score (float): Optimization score (higher is better)
-- sequence (str): The sequence data
+- `id` (str): Sequence identifier
+- `score` (float): Optimization score (higher is better)
+- `sequence` (str): The sequence data
 
-If unsuccessful:
+If fail:
 - JSON with error message explaining why results aren't available
 
 
