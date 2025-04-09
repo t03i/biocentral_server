@@ -69,7 +69,8 @@ def create_server_app(postgresql_user="embeddingsuser", postgresql_pwd="embeddin
 
 def run_server():
     app = create_server_app()
-    app.run(host="127.0.0.1", port=Constants.SERVER_DEFAULT_PORT, threaded=True)
+    # app.run(host="127.0.0.1", port=Constants.SERVER_DEFAULT_PORT, threaded=True)
+    app.run(host="0.0.0.0", port=Constants.SERVER_DEFAULT_PORT, threaded=True)
 
 
 __all__ = [

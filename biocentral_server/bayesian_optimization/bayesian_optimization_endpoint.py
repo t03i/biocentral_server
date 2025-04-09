@@ -1,7 +1,9 @@
 import hashlib
 import json
+import os
+import sys
 from flask import current_app
-
+import logging
 from flask import request, jsonify, Blueprint
 
 from biotrainer.protocols import Protocol
@@ -119,6 +121,14 @@ def verify_optim_target(config_dict: dict):
                 "[verify_config]: Config for continuous target need to include value_preference that allow maximize, minimize, or neutral strategy"
             )
 
+def get_next_log_file():
+    """Creates a log filename with the next available number."""
+    i = 1
+    while True:
+        log_file = f"application_{i}.log"
+        if not os.path.exists(log_file):
+            return log_file
+        i += 1
 
 @bayesian_optimization_service_route.route(
     "/bayesian_optimization_service/training", methods=["POST"]
@@ -186,6 +196,15 @@ def train_and_inference():
     """
     # verify configuration dict
     config_dict: dict = request.get_json()
+    logging.basicConfig(
+    level=logging.INFO,
+    format='%(message)s',
+    handlers=[
+        logging.FileHandler("logs/output.log"),
+        logging.StreamHandler(sys.stdout)
+    ]
+    )
+    print(f"Request train_and_inference: \n {config_dict}")
     try:
         verify_config(config_dict)
     except Exception as e:

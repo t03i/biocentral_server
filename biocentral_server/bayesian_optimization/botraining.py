@@ -152,7 +152,7 @@ def val_dataset_split(train_data: dict, val_rate: float = 0.2, random_seed: int 
 
 def data_prep(config_dict: dict, allow_empty_inference: bool = False) -> tuple[dict[str, list], dict[str, list], dict]:
     """
-    train_data = {"ids": [], "X": [], "y": []}
+    train_data = {"ids": [], "X": （n_sample, dim）, "y": (n_sample), (n_sample, n_class))}
     inference_data = {"ids": [], "X": []}
     dict[seq_id] = [seq, description, embedding]
     """
@@ -197,10 +197,11 @@ def train_and_inference_regression(train_data, inference_data, config_dict):
     model, likelihood = gp.trainGPRegModel(train_data)
     # Y = x^Tw + eps
     prediction_dist = likelihood(model(inference_data['X']))
-
+    # TODO: consider uncertainty
     marginal_dist = torch.distributions.Normal(
         prediction_dist.mean, prediction_dist.covariance_matrix.diag().sqrt()
     )
+    # p(lb < feat < ub)
     prob = marginal_dist.cdf(
         torch.Tensor([config_dict["target_interval_ub"]])
     ) - marginal_dist.cdf(torch.Tensor([config_dict["target_interval_lb"]]))
@@ -209,34 +210,51 @@ def train_and_inference_regression(train_data, inference_data, config_dict):
     # acquisition: weighted average of prob and mean
     strategy_factor = {'maximize': 1, 'minimize': -1, 'neutral': 0}
     e2e = config_dict['coefficient']
-    return e2e * score + strategy_factor[config_dict['value_preference']] * (1-e2e) * prediction_dist.mean
+    score = e2e * score + strategy_factor[config_dict['value_preference']] * (1-e2e) * prediction_dist.mean
+    # uncertainty
+    return score # (n_inference)
 
+# {"error": f"Server error: task finished but result file {out_file} not found"}
+def dump_results(target_path: Path, results):
+    results_yaml = yaml.dump(results)
+    with target_path.open('w+') as out_file:
+        out_file.write(results_yaml)
 
 def pipeline(config_path: str):
     config_dict = load_config_from_yaml(config_path)
+    result_path = Path(config_dict["output_dir"])/"out.yml"
     # data preparation: we need training data (X, y), 
     # inference data (X), and description (ids and seqs)
     # TODO: now validation is hardcoded to be true
-    validation = True
-    train_data, inference_data, seqs = data_prep(config_dict, validation)
-    if validation:
-        train_data, inference_data = val_dataset_split(train_data)
-        train_data = data_trunc(train_data, 6000) # my memory can't handle too much data
-    # train model, inference and add with acquisition function score
-    if config_dict['discrete']: # TODO: classification
-        model, likelihood = gp.trainGPClsModel(train_data)
-    else:
-        scores = train_and_inference_regression(train_data, inference_data, config_dict)
-    # ranking
-    results = []
-    for idx in range(len(inference_data['ids'])):
-        sid = inference_data['ids'][idx]
-        score = scores[idx].item()
-        seq = seqs[sid][0]
-        results.append({"id": sid, "sequence": seq, "score": score})
-    results.sort(key=lambda x: x["score"], reverse = True)
-    # dump result
-    results_yaml = yaml.dump(results)
-    out_file = Path(config_dict["output_dir"])/"out.yml"
-    with out_file.open('w+') as config_file:
-        config_file.write(results_yaml)
+    # TODO: update python dependency
+    validation = False
+    try:
+        train_data, inference_data, seqs = data_prep(config_dict, validation)
+        print("data_prep_finished")
+        if validation:
+            train_data, inference_data = val_dataset_split(train_data)
+            train_data = data_trunc(train_data, 6000) # my memory can't handle too much data
+        # train model, inference and add with acquisition function score
+        if config_dict['discrete']: # TODO: classification
+            print("ERROR, discrete target not supported")
+            dump_results(result_path, {"error": "discrete target not supported"})
+            return 
+            # model, likelihood = gp.trainGPClsModel(train_data)
+        else:
+            scores = train_and_inference_regression(train_data, inference_data, config_dict)
+        # ranking
+        results = []
+        for idx in range(len(inference_data['ids'])):
+            sid = inference_data['ids'][idx]
+            score = scores[idx].item()
+            seq = seqs[sid][0]
+            results.append({"id": sid, "sequence": seq, "score": score})
+        results.sort(key=lambda x: x["score"], reverse = True)
+        # dump result
+        dump_results(result_path, results)
+    except Exception as e:
+        err_out = {"error": str(e)}
+        print(f"error: {str(e)}")
+        dump_results(result_path, err_out)
+
+# TODO: moving to GPU
