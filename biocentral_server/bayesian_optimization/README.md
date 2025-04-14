@@ -1,5 +1,11 @@
-
 ## API specification
+
+TODOs
+
+- [ ] 
+
+
+
 ### train_and_inference
 url: `POST /bayesian_optimization_service/training`
 Launch Bayesian Optimization model training and inference.
@@ -22,14 +28,20 @@ Optional Arguments:
 - `device` (str): device, default: `None`
 - `feature_name` (str): case insensitive name of feature in description of `.fasta` file, default: `TARGET`
 
-For discrete targets:
+For discrete targets
 - `discrete_labels` (list): All possible labels
 - `discrete_targets` (list): Subset of labels that are targets
 
-For continuous targets:
-- `target_interval_lb` (float): Lower bound of target interval
-- `target_interval_ub` (float): Upper bound of target interval
-- `value_preference` (str): Strategy for scoring ("maximize", "minimize", or "neutral")
+For continuous targets
+- `optimization_mode` (str): mode selection 
+    - options: `interval`, `value`, `maximize` and `minimize`
+- when optimization_mode is `interval`: 
+    - at least one of `target_lb :: float`, `target_ub :: float` should be in request
+    - `target_lb < target_lb` when both provided
+    - For unbounded interval, either set them to `+Infinity` and `-Infinity`, or not set
+- when optimization_mode is `value`: 
+    - `target_value :: float`
+
 
 #### Returns
 JSON with:
@@ -95,6 +107,8 @@ POST with JSON body containing:
 #### Returns
 If successful: JSON array of ranked results, each containing:
 - `id` (str): Sequence identifier
+- `mean` (float): Optimization score (higher is better)
+- `uncertainty` (float): Optimization score (higher is better)
 - `score` (float): Optimization score (higher is better)
 - `sequence` (str): The sequence data
 
@@ -112,18 +126,24 @@ Example request
 ```
 Example response
 ``` json
-[
-    {
-        "id": "EJF35357.1",
-        "score": 0.790058,
-        "sequence": "MSEEIRYLAGVVAELKRRLDAAPS..."
-    },
-    {
-        "id": "YP_096167.1",
-        "score": 0.490486,
-        "sequence": "MRTLFYSQLMYEAAKRQPHPHRCA..."
-    }
-]
+{
+    "result": [
+        {
+            "id": "EJF35357.1",
+            "mean": 0.790058,
+            "uncertainty": 0.790058,
+            "score": 0.790058,
+            "sequence": "MSEEIRYLAGVVAELKRRLDAAPS..."
+        },
+        {
+            "id": "YP_096167.1",
+            "mean": 0.790058,
+            "uncertainty": 0.790058,
+            "score": 0.790058,
+            "sequence": "MRTLFYSQLMYEAAKRQPHPHRCA..."
+        }
+    ]
+}
 ```
 ## Appendix: Regression with Gaussian Process
 
@@ -136,12 +156,19 @@ $y=x^Tw+\epsilon$, where $\epsilon \sim \mathcal{N}(0,\delta)$
 Bayesian approach is about obtaining the weight distribution $p(w|X, Y)$. 
 
 We know from independence of w and X, and bayseian theorem, posterior distribution is propotional to <u>likelihood</u> (observation distribution given weight), and <u>prior</u> belief,
+
+
 $$
 p(w|X, Y) \propto p(Y|X,w)p(w|X)=p(Y|X,w)p(w)
 $$
+
+
 ##### Training
+
 To get weight posterior distribution, we need to compute likelihood and combine it with prior.
 First, likelihood distribution of vector Y can be derived from distribution of iid. distributed $y_i$ and some vectorization technique.
+
+
 $$
 \begin{aligned}
 p(Y|X,w)
@@ -157,21 +184,31 @@ p(Y|X,w)
 &=\mathcal{N}(Xw,\sigma^2 I)
 \end{aligned}
 $$
+
+
 We assume $\mathbf{w}$ also follows multivariate normal distribution $\mathbf{w}\sim \mathcal{N}(0,\Sigma_w)$, and we know production of two gaussian is another gaussian. So posterior distribution is 
+
+
 $$
 w \mid y \sim \mathcal{N}(\mu_{\text{post}}, \Sigma_{\text{post}})
-$$ 
+$$
 with
+
+
 $$
 \Sigma_{\text{post}} = \left(\frac{1}{\sigma^2}X^\top X + \Sigma_w^{-1}\right)^{-1},\quad \mu_{\text{post}} = \Sigma_{\text{post}}\left(\frac{1}{\sigma^2}X^\top y\right).
 $$
+
+
 ##### Inference
+
 We have taken the bayesian approach to model weight as a distribution, so the inference based on weight is also a distribution
 p() 
 #### More expressiveness: Bayesian regression in feature space
 Linear models are unable to fit non-linear target function. Inspired by Taylor's theorem that each continuous function can be approximated by a infinite series of polynomial, non-linear function can be approximated by linear regression on feature space constructed by n-order polynomials. 
 
 As feature mapping depends only on X, all the derivations we made above still hold, except input X is replaced by features $\Phi$.
+
 
 $$
 \begin{aligned}
@@ -181,6 +218,8 @@ p(f_x|x_*,X,y)
     &\phi_*^T \Sigma_p \phi_* - \phi_*^T \Sigma_p{\phi} (K+\sigma_n^2I)^ {-1} \phi^T \Sigma_p \phi_*)
 \end{aligned}
 $$
+
+
 Where $K=\Phi^T\Sigma_p\Phi$. 
 Noticed feature space always enter in form of $\phi^T\Sigma_p\phi$, $\phi_*^T\Sigma_p\phi$, or $\phi_*^T\Sigma_p\phi_*$. 
 To simplify computation, mapping and dot product can be unified into 

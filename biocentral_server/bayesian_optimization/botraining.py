@@ -28,12 +28,21 @@ def mockoutput(config_path: str):
     results = []
     all_seqs = {seq.id: str(seq.seq) for seq in read_FASTA(config_dict["sequence_file"])}
     for id, seq in all_seqs.items():
-        results.append({"id": id, "sequence": seq, "score": float(f"{random.random():.6f}")})
+        results.append(
+            {
+                "id": id,
+                "sequence": seq,
+                "mean": float(f"{random.random():.6f}"),
+                "uncertainty": float(f"{random.random():.6f}"),
+                "score": float(f"{random.random():.6f}"),
+            }
+        )
     results.sort(key=lambda x: x["score"], reverse = True)
     results_yaml = yaml.dump(results)
     out_file = Path(config_dict["output_dir"])/"out.yml"
     with out_file.open('w+') as config_file:
         config_file.write(results_yaml)
+    print('finish mock')
 
 def merge_label_embeddings(embeddings_file: str, fasta_dict: dict) -> tuple[dict, bool]:
     '''
@@ -57,8 +66,6 @@ def merge_label_embeddings(embeddings_file: str, fasta_dict: dict) -> tuple[dict
     return valid_seqs, seqs_equal and len(fasta_dict) == len(valid_seqs)
 
 
-# how to get feature_name? add more task descriptions to config?
-# feature type: 
 def parse_description_to_label(description: str, isregression: bool, feature_name: str = 'TARGET'):
     '''
     parse feature from descriptions
@@ -168,7 +175,7 @@ def data_prep(config_dict: dict, allow_empty_inference: bool = False) -> tuple[d
     seqs, ok = merge_label_embeddings(config_dict["embeddings_file"], fasta_seqs)
     if not ok:
         print("embedding_mismatch")
-        pass  # TODO: add warning, embeddings_file doesn't correspond to sequence file 
+        raise ValueError("data_prep: Mismatch detected between embedding file and fasta sequence file")
     if len(seqs) == 0:
         raise ValueError("data_prep: no valid sequence left")
     # parse labels
@@ -217,17 +224,15 @@ def train_and_inference_regression(train_data, inference_data, config_dict):
     # uncertainty
     return score # (n_inference)
 
-# {"error": f"Server error: task finished but result file {out_file} not found"}
 def dump_results(target_path: Path, results):
     results_yaml = yaml.dump(results)
     with target_path.open('w+') as out_file:
         out_file.write(results_yaml)
+    print(f"result write to {target_path}")
 
 def pipeline(config_path: str):
     config_dict = load_config_from_yaml(config_path)
     result_path = Path(config_dict["output_dir"])/"out.yml"
-    # data preparation: we need training data (X, y), 
-    # inference data (X), and description (ids and seqs)
     # TODO: now validation is hardcoded to be true
     # TODO: update python dependency
     validation = False

@@ -267,4 +267,5 @@ def model_results():
         )
     with out_file.open("r") as f:
         results_data = yaml.load(f, Loader=yaml.FullLoader)
-    return jsonify({"result": results_data})
+    resp = jsonify({"result": results_data})
+    return resp

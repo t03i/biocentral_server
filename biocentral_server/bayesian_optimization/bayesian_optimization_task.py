@@ -32,7 +32,7 @@ class BayesTask(TaskInterface):
         self._pre_embed_with_db()
         print("finish embedding task")
         self.biotrainer_process = mp.Process(
-            target=pipeline, args=(str(self.output_dir / "config.yaml"),)
+            target=mockoutput, args=(str(self.output_dir / "config.yaml"),)
         )
         self.biotrainer_process.start()
         # TODO: allow progress report?
@@ -73,8 +73,6 @@ class BayesTask(TaskInterface):
                 embeddings_task_result=embeddings_task_result, output_path=output_path
             )
         self.config_dict["embeddings_file"] = str(output_path)
-
-        # TODO Enable biotrainer to accept a dict
         self.export_dict()
 
     def export_dict(self):
