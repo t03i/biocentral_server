@@ -60,7 +60,7 @@ Example for float / bool as string
   "coefficient": "5"
 }
 ```
-Example for continuous target:
+Example for regression with interval target:
 ``` json
 {
   "database_hash": "hello",
@@ -69,6 +69,27 @@ Example for continuous target:
   "optimization_mode": "interval",
   "target_lb": 40,
   "target_ub": 50,
+  "coefficient": 5
+}
+```
+Example for regression with maximize:
+``` json
+{
+  "database_hash": "hello",
+  "model_type": "gaussian_process",
+  "discrete": "false",
+  "optimization_mode": "maximize",
+  "coefficient": 5
+}
+```
+Example for regression with value target:
+``` json
+{
+  "database_hash": "hello",
+  "model_type": "gaussian_process",
+  "discrete": "false",
+  "optimization_mode": "value",
+  "target_value": 40,
   "coefficient": 5
 }
 ```

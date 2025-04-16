@@ -223,17 +223,18 @@ def calculate_acquisition(distance_penalty, uncertainties, beta):
     return acquisition
 
 def train_and_inference_regression(train_data, inference_data, config_dict):
-    """
+    '''
     Args: 
-    - data: dict {'X': [], 'y': [], 'ids': []}
-    - config_dict: e2e coefficient, lb, ub, strategy
+    - train_data: dict {'X': [], 'y': [], 'ids': []}
+    - inference_data: dict {'X': [], 'ids': []}
+    - config_dict: dict containing configuration parameters like coefficient, lb, ub
     Return:
-    - inference score, tensor of shape (n_inf_data)
-    - score = e2e * scaled_probability 
-        + (1-e2e) * mean * (1 if maximize else -1) 
-    """
+    - scores: tensor of shape (n_inference_data)
+    - means
+    - uncertainties
+    '''
     if isinstance(train_data['X'], list) or isinstance(inference_data['X'], list):
-        raise ValueError("train_and_inference_regression: data should not empty")
+        raise ValueError("train_and_inference_regression: data should not be empty")
     model, likelihood = gp.trainGPRegModel(train_data)
     with torch.no_grad():
         prediction_dist = likelihood(model(inference_data['X']))
@@ -242,6 +243,13 @@ def train_and_inference_regression(train_data, inference_data, config_dict):
         beta = config_dict['coefficient']
         score = calculate_acquisition(dist, stds, beta)
     return score, prediction_dist.mean, stds # (n_inference)
+
+def train_and_inference_classification(train_data, inference_data, config_dict):
+    if isinstance(train_data['X'], list) or isinstance(inference_data['X'], list):
+        raise ValueError("train_and_inference_regression: data should not be empty")
+    model, likelihood = gp.trainGPRegModel(train_data)
+    with torch.no_grad():
+        prediction_dist = likelihood(model(inference_data['X']))
 
 def dump_results(target_path: Path, results):
     results_yaml = yaml.dump(results)
@@ -255,8 +263,6 @@ def pipeline(config_path: str, result_path: str = "", debug = False):
         result_path = Path(config_dict["output_dir"])/"out.yml"
     else:
         result_path = Path(result_path)
-    # TODO: now validation is hardcoded to be true
-    # TODO: update python dependency
     try:
         train_data, inference_data, seqs = data_prep(config_dict, debug)
         print("data_prep_finished")
@@ -296,4 +302,5 @@ def pipeline(config_path: str, result_path: str = "", debug = False):
         print(f"error: {str(e)}")
         dump_results(result_path, err_out)
 
-# TODO: moving to GPU
+# TODO: move data to GPU
+# TODO: update python dependency
