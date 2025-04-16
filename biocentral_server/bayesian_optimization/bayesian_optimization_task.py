@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Dict, Callable
 from biotrainer.protocols import Protocol
 import yaml
-from .botraining import mockoutput, SUPPORTED_MODELS, pipeline
+from .botraining import SUPPORTED_MODELS, pipeline
 
 from ..embeddings import EmbeddingTask
 from ..server_management import TaskInterface, EmbeddingsDatabase, TaskDTO
@@ -32,7 +32,8 @@ class BayesTask(TaskInterface):
         self._pre_embed_with_db()
         print("finish embedding task")
         self.biotrainer_process = mp.Process(
-            target=mockoutput, args=(str(self.output_dir / "config.yaml"),)
+            target=pipeline, args=(str(self.output_dir / "config.yaml"), "", False) 
+            # set to True when input data have no inference data
         )
         self.biotrainer_process.start()
         # TODO: allow progress report?

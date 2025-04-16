@@ -68,7 +68,7 @@ def verify_config(config_dict: dict):
     ### Configuration Requirements
     - `databsase_hash :: str`
     - `model_type = "gaussian_process"`
-    - `coefficient :: float` in `[0, 1]`
+    - `coefficient :: float`
     ### Optional arguent
     - `embedder_name :: str`, default: `one_hot_encoding`
     #### Configurating optimization target
@@ -96,8 +96,8 @@ def verify_config(config_dict: dict):
         raise ValueError(
             f"[verify_config]: unsupported model type. Valid model types: {BayesTask.SUPPORTED_MODELS}"
         )
-    if coefficient > 1 or coefficient < 0:
-        raise ValueError("[verify_config]: Coefficient should fall in range [0, 1]")
+    if coefficient < 0:
+        raise ValueError("[verify_config]: Coefficient should be non-negative")
     return verify_optim_target(config_dict)
 
 

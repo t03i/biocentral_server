@@ -21,7 +21,7 @@ This endpoint takes a configuration dictionary, validates it, and starts
 POST with JSON body containing:
 - `database_hash` (str): Identifier for the sequence database
 - `model_type` (str): Type of model (currently only `gaussian_process`)
-- `coefficient` (float): Value between 0-1 controlling exploration vs. exploitation
+- `coefficient` (float): Non-negative factor controlling exploration vs. exploitation. Larger => more exploration. 
 - `discrete` (bool): Whether target is discrete or continuous
 Optional Arguments:
 - `embedder_name` (str): name of embedder, default: `one_hot_encoding`
@@ -57,7 +57,7 @@ Example for float / bool as string
   "optimization_mode": "interval",
   "target_lb": "40",
   "target_ub": "50",
-  "coefficient": "0.7"
+  "coefficient": "5"
 }
 ```
 Example for continuous target:
@@ -69,7 +69,7 @@ Example for continuous target:
   "optimization_mode": "interval",
   "target_lb": 40,
   "target_ub": 50,
-  "coefficient": 0.7
+  "coefficient": 5
 }
 ```
 Example for discrete target:

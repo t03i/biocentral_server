@@ -15,7 +15,7 @@ def load_config_from_yaml(config_path: Path) -> dict:
         return config_dict
     except FileNotFoundError:
         raise FileNotFoundError(f"Config file not found at: {config_path}")
-    except yaml.YAMlLError as e:
+    except yaml.YAMLError as e:
         raise yaml.YAMLError(f"Error parsing YAML file {config_path}: {e}")
 
 
@@ -160,22 +160,22 @@ def val_dataset_split(train_data: dict, val_rate: float = 0.2, random_seed: int 
     }
     return train_dataset, val_dataset
 
-def data_prep(config_dict: dict, allow_empty_inference: bool = False) -> tuple[dict[str, list], dict[str, list], dict]:
+def data_prep(config_dict: dict, allow_empty_inference: bool = False, max_entries: int = -1) -> tuple[dict[str, list], dict[str, list], dict]:
     """
     train_data = {"ids": [], "X": （n_sample, dim）, "y": (n_sample), (n_sample, n_class))}
     inference_data = {"ids": [], "X": []}
     dict[seq_id] = [seq, description, embedding]
     """
     # read labels and seqs
-    fasta_seqs = {
-        seq.id: [str(seq.seq), seq.description]
-        for seq in read_FASTA(config_dict["sequence_file"])
-    }
+    fasta_list = read_FASTA(config_dict["sequence_file"])
+    if max_entries > 0:
+        fasta_list = read_FASTA(config_dict["sequence_file"])[:max_entries]
+    fasta_seqs = {seq.id: [str(seq.seq), seq.description] for seq in fasta_list}
     # read embeddings
     seqs, ok = merge_label_embeddings(config_dict["embeddings_file"], fasta_seqs)
     if not ok:
         print("embedding_mismatch")
-        raise ValueError("data_prep: Mismatch detected between embedding file and fasta sequence file")
+        # raise ValueError("data_prep: Mismatch detected between embedding file and fasta sequence file")
     if len(seqs) == 0:
         raise ValueError("data_prep: no valid sequence left")
     # parse labels
@@ -194,6 +194,34 @@ def data_trunc(train_data: dict, max_n: int):
     sm_dataset = {key: val[:max_n] for key, val in train_data.items()}
     return sm_dataset
 
+def distance_penalty(means: torch.Tensor, config_dict):
+    mode = config_dict.get('optimization_mode', '').lower()
+    match mode:
+        case "maximize":
+            return means.max() - means
+        case "minimize":
+            return means
+        case "value":
+            target_val = config_dict['target_value']
+            dist = torch.abs(target_val - means)
+            return dist
+        case "interval":
+            dist = torch.zeros_like(means)
+            lb, ub = config_dict['target_lb'], config_dict['target_ub']
+            below_lb = means < lb
+            above_ub = means > ub
+            dist[below_lb] = lb - means[below_lb]
+            dist[above_ub] = means[above_ub] - ub
+            return dist
+        case _:
+            raise ValueError("distance_penalty: invalid optimization_mode")
+    return 
+
+def calculate_acquisition(distance_penalty, uncertainties, beta):
+    proximity = distance_penalty.max() - distance_penalty   
+    acquisition = proximity + beta * uncertainties
+    return acquisition
+
 def train_and_inference_regression(train_data, inference_data, config_dict):
     """
     Args: 
@@ -204,25 +232,16 @@ def train_and_inference_regression(train_data, inference_data, config_dict):
     - score = e2e * scaled_probability 
         + (1-e2e) * mean * (1 if maximize else -1) 
     """
+    if isinstance(train_data['X'], list) or isinstance(inference_data['X'], list):
+        raise ValueError("train_and_inference_regression: data should not empty")
     model, likelihood = gp.trainGPRegModel(train_data)
-    # Y = x^Tw + eps
-    prediction_dist = likelihood(model(inference_data['X']))
-    # TODO: consider uncertainty
-    marginal_dist = torch.distributions.Normal(
-        prediction_dist.mean, prediction_dist.covariance_matrix.diag().sqrt()
-    )
-    # p(lb < feat < ub)
-    prob = marginal_dist.cdf(
-        torch.Tensor([config_dict["target_interval_ub"]])
-    ) - marginal_dist.cdf(torch.Tensor([config_dict["target_interval_lb"]]))
-    # scale probability to mean
-    score = prob * (prediction_dist.mean.mean())
-    # acquisition: weighted average of prob and mean
-    strategy_factor = {'maximize': 1, 'minimize': -1, 'neutral': 0}
-    e2e = config_dict['coefficient']
-    score = e2e * score + strategy_factor[config_dict['value_preference']] * (1-e2e) * prediction_dist.mean
-    # uncertainty
-    return score # (n_inference)
+    with torch.no_grad():
+        prediction_dist = likelihood(model(inference_data['X']))
+        dist = distance_penalty(prediction_dist.mean, config_dict)
+        stds = prediction_dist.covariance_matrix.diag().sqrt()
+        beta = config_dict['coefficient']
+        score = calculate_acquisition(dist, stds, beta)
+    return score, prediction_dist.mean, stds # (n_inference)
 
 def dump_results(target_path: Path, results):
     results_yaml = yaml.dump(results)
@@ -230,16 +249,18 @@ def dump_results(target_path: Path, results):
         out_file.write(results_yaml)
     print(f"result write to {target_path}")
 
-def pipeline(config_path: str):
+def pipeline(config_path: str, result_path: str = "", debug = False):
     config_dict = load_config_from_yaml(config_path)
-    result_path = Path(config_dict["output_dir"])/"out.yml"
+    if not result_path:
+        result_path = Path(config_dict["output_dir"])/"out.yml"
+    else:
+        result_path = Path(result_path)
     # TODO: now validation is hardcoded to be true
     # TODO: update python dependency
-    validation = False
     try:
-        train_data, inference_data, seqs = data_prep(config_dict, validation)
+        train_data, inference_data, seqs = data_prep(config_dict, debug)
         print("data_prep_finished")
-        if validation:
+        if debug:
             train_data, inference_data = val_dataset_split(train_data)
             train_data = data_trunc(train_data, 6000) # my memory can't handle too much data
         # train model, inference and add with acquisition function score
@@ -249,14 +270,24 @@ def pipeline(config_path: str):
             return 
             # model, likelihood = gp.trainGPClsModel(train_data)
         else:
-            scores = train_and_inference_regression(train_data, inference_data, config_dict)
+            scores, means, uncertainties = train_and_inference_regression(train_data, inference_data, config_dict)
         # ranking
         results = []
         for idx in range(len(inference_data['ids'])):
             sid = inference_data['ids'][idx]
             score = scores[idx].item()
+            mean = means[idx].item()
+            uncertainty = uncertainties[idx].item()
             seq = seqs[sid][0]
-            results.append({"id": sid, "sequence": seq, "score": score})
+            results.append(
+                {
+                    "id": sid,
+                    "sequence": seq,
+                    "mean": mean,
+                    "uncertainty": uncertainty,
+                    "score": score,
+                }
+            )
         results.sort(key=lambda x: x["score"], reverse = True)
         # dump result
         dump_results(result_path, results)
