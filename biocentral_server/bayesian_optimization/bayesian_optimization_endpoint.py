@@ -78,12 +78,7 @@ def verify_config(config_dict: dict):
         - `discrete_targets :: list`
         - targets should be true subset of labels
     - When `discrete` = false
-        - `target_interval_lb target_interval_ub :: floats` (-inf, inf)
-        - representing upper and lower bound of interval
-        - `value_preference :: str` enum can take
-            - `maximize` that prioritize larger value,
-            - `minimize` that prioritize smaller value, or
-            - `neutral` when value is not considered in final score
+        - `optimization_mode` (str): mode selection 
     """
     database_hash: str = config_dict.get("database_hash")
     model_type: str = config_dict.get("model_type").lower()
@@ -123,29 +118,43 @@ def verify_optim_target(config_dict: dict):
         sl, st = set(labels), set(targets)
         if not (sl.issuperset(st) and len(sl) > len(st)):
             raise ValueError("[verify_config]: targets should be true subset of labels")
+        # limit to binary classification
+        if len(sl) > 2:
+            raise ValueError("[verify_config]: Now only binary classification is supported")
     else:
-        lb = float_if_possible(config_dict.get("target_interval_lb"))
-        config_dict['target_interval_lb'] = lb
-        ub = float_if_possible(config_dict.get("target_interval_ub"))
-        config_dict['target_interval_ub'] = ub
-        if not (lb and ub and isinstance(lb, float) and isinstance(ub, float)):
-            raise KeyError(
-                "[verify_config]: Config for continuous target need to include " \
-                "target_interval_lb :: float and target_interval_ub :: float"
-            )
-        if lb >= ub:
-            raise ValueError(
-                "[verify_config]: target_interval_lb should < target_interval_ub"
-            )
-        value_preference = config_dict.get("value_preference")
-        if not value_preference or value_preference not in {
+        optimization_mode = config_dict.get('optimization_mode')
+        if not optimization_mode or optimization_mode.lower() not in [
+            "interval",
+            "value",
             "maximize",
             "minimize",
-            "neutral",
-        }:
-            raise KeyError(
-                "[verify_config]: Config for continuous target need to include value_preference that allow maximize, minimize, or neutral strategy"
+        ]:
+            raise ValueError(
+                "[verify_config]: require optimization_mode::str\n"
+                "Options: interval, value, maximize, minimize"
             )
+        match optimization_mode:
+            case "interval":
+                lb = float_if_possible(config_dict.get("target_lb"))
+                config_dict["target_lb"] = lb
+                ub = float_if_possible(config_dict.get("target_ub"))
+                config_dict["target_ub"] = ub
+                if not (lb and ub and isinstance(lb, float) and isinstance(ub, float)):
+                    raise KeyError(
+                        "[verify_config]: Config for continuous target need to include "
+                        + "target_lb :: float and target_ub :: float"
+                    )
+                if lb >= ub:
+                    raise ValueError(
+                        "[verify_config]: target_interval_lb should < target_interval_ub"
+                    )
+            case "value":
+                val = float_if_possible(config_dict.get("target_value"))
+                config_dict['target_value'] = val
+                if not val:
+                    raise KeyError(
+                        "[verify_config]: Config for value target needs to include target_value :: float"
+                    )
     return config_dict
 
 def get_next_log_file():
@@ -164,14 +173,6 @@ def train_and_inference():
     # verify configuration dict
     print("In endpoint")
     config_dict: dict = request.get_json()
-    # logging.basicConfig(
-    # level=logging.INFO,
-    # format='%(message)s',
-    # handlers=[
-    #     logging.FileHandler("logs/output.log"),
-    #     logging.StreamHandler(sys.stdout)
-    # ]
-    # )
     print(f"Request train_and_inference: \n {config_dict}")
     try:
         verify_config(config_dict)

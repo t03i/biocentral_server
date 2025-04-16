@@ -54,22 +54,22 @@ Example for float / bool as string
   "database_hash": "hello",
   "model_type": "gaussian_process",
   "discrete": "false",
-  "target_interval_lb": "-Infinity",
-  "target_interval_ub": "200.4",
-  "value_preference": "neutral",
+  "optimization_mode": "interval",
+  "target_lb": "40",
+  "target_ub": "50",
   "coefficient": "0.7"
 }
 ```
 Example for continuous target:
 ``` json
 {
-    "database_hash": "hello",
-    "model_type": "gaussian_process",
-    "discrete": false,
-    "target_interval_lb": -Infinity,
-    "target_interval_ub": 200.4,
-    "value_preference": "neutral",
-    "coefficient": 0.7
+  "database_hash": "hello",
+  "model_type": "gaussian_process",
+  "discrete": "false",
+  "optimization_mode": "interval",
+  "target_lb": 40,
+  "target_ub": 50,
+  "coefficient": 0.7
 }
 ```
 Example for discrete target:
