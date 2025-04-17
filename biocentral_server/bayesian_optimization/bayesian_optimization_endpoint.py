@@ -1,7 +1,7 @@
 import hashlib
 import json
 import os
-import sys
+import torch
 from flask import current_app
 import logging
 from flask import request, jsonify, Blueprint
@@ -98,6 +98,11 @@ def verify_config(config_dict: dict):
         )
     if coefficient < 0:
         raise ValueError("[verify_config]: Coefficient should be non-negative")
+    device: str = config_dict.get('device', '')
+    if device and device.lower() not in ['cuda', 'cpu']:
+        raise ValueError("[verify_config]: Device should be either 'cuda' or 'cpu'")
+    if device == 'cuda' and not torch.cuda.is_available():
+        raise ValueError("[verify_config]: CUDA device is not available")
     return verify_optim_target(config_dict)
 
 
@@ -136,18 +141,22 @@ def verify_optim_target(config_dict: dict):
         match optimization_mode:
             case "interval":
                 lb = float_if_possible(config_dict.get("target_lb"))
-                config_dict["target_lb"] = lb
                 ub = float_if_possible(config_dict.get("target_ub"))
-                config_dict["target_ub"] = ub
-                if not (lb and ub and isinstance(lb, float) and isinstance(ub, float)):
+                if not (lb or ub):
                     raise KeyError(
                         "[verify_config]: Config for continuous target need to include "
-                        + "target_lb :: float and target_ub :: float"
+                        + "target_lb :: float or target_ub :: float"
                     )
+                if lb is None:
+                    lb = float('-inf')
+                if ub is None:
+                    ub = float('inf')
                 if lb >= ub:
                     raise ValueError(
                         "[verify_config]: target_interval_lb should < target_interval_ub"
                     )
+                config_dict["target_lb"] = lb
+                config_dict["target_ub"] = ub
             case "value":
                 val = float_if_possible(config_dict.get("target_value"))
                 config_dict['target_value'] = val
