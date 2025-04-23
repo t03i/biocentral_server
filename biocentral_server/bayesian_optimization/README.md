@@ -1,11 +1,5 @@
 ## API specification
 
-TODOs
-
-- [ ] 
-
-
-
 ### train_and_inference
 url: `POST /bayesian_optimization_service/training`
 Launch Bayesian Optimization model training and inference.
@@ -23,9 +17,10 @@ POST with JSON body containing:
 - `model_type` (str): Type of model (currently only `gaussian_process`)
 - `coefficient` (float): Non-negative factor controlling exploration vs. exploitation. Larger => more exploration. 
 - `discrete` (bool): Whether target is discrete or continuous
+
 Optional Arguments:
 - `embedder_name` (str): name of embedder, default: `one_hot_encoding`
-- `device` (str): device, default: `None`
+- `device` (str): device, option: `cuda`, default: `cpu`
 - `feature_name` (str): case insensitive name of feature in description of `.fasta` file, default: `TARGET`
 
 For discrete targets
@@ -72,6 +67,7 @@ Example for regression with interval target:
   "coefficient": 5
 }
 ```
+
 Example for regression with maximize:
 ``` json
 {
@@ -82,6 +78,7 @@ Example for regression with maximize:
   "coefficient": 5
 }
 ```
+
 Example for regression with value target:
 ``` json
 {

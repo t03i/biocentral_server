@@ -5,7 +5,7 @@ import yaml
 import torch
 from biocentral_server.bayesian_optimization import gaussian_process_models as gp
 from biotrainer.utilities import read_FASTA
-
+import traceback
 def load_config_from_yaml(config_path: Path) -> dict:
     try:
         with open(config_path, "r") as config_file:
@@ -74,6 +74,7 @@ def parse_description_to_label(description: str, isregression: bool, feature_nam
     - description is expected to be space separated list of strings
     - feature_name and value should not contain space and '='
     - first feature_name=feature_value will be considered
+      - as a result, classification target is expected to have only one label
     - sequence with feature_name=Unknown (case insensitive unknown) 
     or feature name doesn't appear will be considered as inference sample 
     '''
@@ -99,6 +100,7 @@ def get_datasets(config_dict: dict, seqs: dict):
     """
     train_data = {"ids": [], "X": [], "y": []}
     inference_data = {"ids": [], "X": []}
+    if dataset is empty, the type of 'X' will be a list. 
     """
     if config_dict['discrete']:
         target_classes = {label: idx for idx, label in enumerate(config_dict['discrete_labels'])}
@@ -109,6 +111,7 @@ def get_datasets(config_dict: dict, seqs: dict):
         if val_1 is None: 
             return False
         return True
+    device = torch.device(config_dict.get('device', 'cpu'))
 
     for id, val in seqs.items():
         if is_training(val[1]):
@@ -121,11 +124,14 @@ def get_datasets(config_dict: dict, seqs: dict):
             inference_data["X"].append(val[2])
     if train_data["X"]:
         train_data["X"] = torch.stack(train_data["X"]).float()
+        train_data["X"] = train_data["X"].to(device=device)
     if inference_data["X"]:
         inference_data["X"] = torch.stack(inference_data["X"]).float()
+        inference_data["X"] = inference_data["X"].to(device=device)
     if train_data['y']:
         train_data['y'] = torch.tensor(train_data['y'])
-    if config_dict["discrete"] and train_data['y']:
+        train_data["y"] = train_data["y"].to(device=device)
+    if config_dict["discrete"] and isinstance(train_data['y'], torch.Tensor):
         train_data["y"] = torch.nn.functional.one_hot(
             train_data['y'], len(config_dict["discrete_labels"])
         )
@@ -147,6 +153,7 @@ def val_dataset_split(train_data: dict, val_rate: float = 0.2, random_seed: int 
     train_indices = indices[val_size:]
     val_indices = indices[:val_size]
 
+    print(val_indices)
     val_dataset = {
         "ids": [train_data["ids"][i] for i in val_indices],
         "X": train_data["X"][val_indices],
@@ -174,7 +181,7 @@ def data_prep(config_dict: dict, allow_empty_inference: bool = False, max_entrie
     # read embeddings
     seqs, ok = merge_label_embeddings(config_dict["embeddings_file"], fasta_seqs)
     if not ok:
-        print("embedding_mismatch")
+        print("WARNING: embedding_mismatch")
         # raise ValueError("data_prep: Mismatch detected between embedding file and fasta sequence file")
     if len(seqs) == 0:
         raise ValueError("data_prep: no valid sequence left")
@@ -186,7 +193,7 @@ def data_prep(config_dict: dict, allow_empty_inference: bool = False, max_entrie
     # train & test set split
     train_data, inference_data = get_datasets(config_dict, seqs)
     if not allow_empty_inference and len(train_data['ids']) * len(inference_data) == 0:
-        raise ValueError("data_prep: training set / inference set is empty")
+        raise ValueError("data_prep: training set / inference set is empty. Have you set feature_name?")
     return train_data, inference_data, seqs
 
 def data_trunc(train_data: dict, max_n: int):
@@ -235,7 +242,7 @@ def train_and_inference_regression(train_data, inference_data, config_dict):
     '''
     if isinstance(train_data['X'], list) or isinstance(inference_data['X'], list):
         raise ValueError("train_and_inference_regression: data should not be empty")
-    model, likelihood = gp.trainGPRegModel(train_data)
+    model, likelihood = gp.trainGPRegModel(train_data, epoch=120, device=config_dict.get('device', 'cpu'))
     with torch.no_grad():
         prediction_dist = likelihood(model(inference_data['X']))
         dist = distance_penalty(prediction_dist.mean, config_dict)
@@ -244,12 +251,36 @@ def train_and_inference_regression(train_data, inference_data, config_dict):
         score = calculate_acquisition(dist, stds, beta)
     return score, prediction_dist.mean, stds # (n_inference)
 
+def target_index(config_dict):
+    target = config_dict['discrete_targets'][0]
+    labels = config_dict['discrete_labels']
+    for idx, label in enumerate(labels):
+        if label.lower() == target.lower():
+            return idx
+    raise ValueError(f"Target '{target}' not found in discrete labels: {labels}")
+        
+
 def train_and_inference_classification(train_data, inference_data, config_dict):
+    '''
+    Args: 
+    - train_data: dict {'X': [], 'y': [], 'ids': []}
+    - inference_data: dict {'X': [], 'ids': []}
+    - config_dict: dict containing configuration parameters like coefficient, lb, ub
+    Return:
+    - scores: tensor of shape (n_inference_data)
+    - means
+    - uncertainties
+    '''
     if isinstance(train_data['X'], list) or isinstance(inference_data['X'], list):
-        raise ValueError("train_and_inference_regression: data should not be empty")
-    model, likelihood = gp.trainGPRegModel(train_data)
+        raise ValueError("train_and_inference_classification: data should not be empty")
+    model, likelihood = gp.trainGPClsModel(train_data, device=config_dict.get('device', 'cpu'))
     with torch.no_grad():
-        prediction_dist = likelihood(model(inference_data['X']))
+        prediction = likelihood(model(inference_data['X']))
+    tgt_idx = target_index(config_dict)
+    means = prediction.mean[tgt_idx]
+    uncer = prediction.covariance_matrix[tgt_idx].diag()
+    scores = means + config_dict['coefficient'] * uncer
+    return scores, means, uncer
 
 def dump_results(target_path: Path, results):
     results_yaml = yaml.dump(results)
@@ -257,24 +288,21 @@ def dump_results(target_path: Path, results):
         out_file.write(results_yaml)
     print(f"result write to {target_path}")
 
-def pipeline(config_path: str, result_path: str = "", debug = False):
+def pipeline(config_path: str, result_path: str = "", allow_empty_infer = False):
     config_dict = load_config_from_yaml(config_path)
     if not result_path:
         result_path = Path(config_dict["output_dir"])/"out.yml"
     else:
         result_path = Path(result_path)
     try:
-        train_data, inference_data, seqs = data_prep(config_dict, debug)
+        train_data, inference_data, seqs = data_prep(config_dict, allow_empty_infer)
         print("data_prep_finished")
-        if debug:
+        if allow_empty_infer and isinstance(inference_data['X'], list):
             train_data, inference_data = val_dataset_split(train_data)
             train_data = data_trunc(train_data, 6000) # my memory can't handle too much data
         # train model, inference and add with acquisition function score
-        if config_dict['discrete']: # TODO: classification
-            print("ERROR, discrete target not supported")
-            dump_results(result_path, {"error": "discrete target not supported"})
-            return 
-            # model, likelihood = gp.trainGPClsModel(train_data)
+        if config_dict['discrete']:
+            scores, means, uncertainties = train_and_inference_classification(train_data, inference_data, config_dict)
         else:
             scores, means, uncertainties = train_and_inference_regression(train_data, inference_data, config_dict)
         # ranking
@@ -298,9 +326,13 @@ def pipeline(config_path: str, result_path: str = "", debug = False):
         # dump result
         dump_results(result_path, results)
     except Exception as e:
-        err_out = {"error": str(e)}
+        tb_str = traceback.format_exc()
+        print(f"Traceback:\n{tb_str}")
         print(f"error: {str(e)}")
+        err_out = {
+            "error": str(e),
+            "traceback": tb_str
+        }
         dump_results(result_path, err_out)
 
-# TODO: move data to GPU
 # TODO: update python dependency

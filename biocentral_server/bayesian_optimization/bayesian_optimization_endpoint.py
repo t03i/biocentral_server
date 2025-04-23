@@ -76,7 +76,7 @@ def verify_config(config_dict: dict):
     - When `discrete = true`
         - `discrete_labels :: list`
         - `discrete_targets :: list`
-        - targets should be true subset of labels
+        - targets should only contain single target label
     - When `discrete` = false
         - `optimization_mode` (str): mode selection 
     """
@@ -124,8 +124,8 @@ def verify_optim_target(config_dict: dict):
         if not (sl.issuperset(st) and len(sl) > len(st)):
             raise ValueError("[verify_config]: targets should be true subset of labels")
         # limit to binary classification
-        if len(sl) > 2:
-            raise ValueError("[verify_config]: Now only binary classification is supported")
+        if len(st) != 1:
+            raise ValueError("[verify_config]: discrete_targets should have exactly 1 element")
     else:
         optimization_mode = config_dict.get('optimization_mode')
         if not optimization_mode or optimization_mode.lower() not in [
