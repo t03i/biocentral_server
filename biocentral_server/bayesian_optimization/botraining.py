@@ -205,6 +205,12 @@ def distance_penalty(means: torch.Tensor, config_dict):
     mode = config_dict.get('optimization_mode', '').lower()
     match mode:
         case "maximize":
+            """
+            #REVIEW
+            I think it would be better to take the `return -means` here, like you do for minimize but vice versa.
+            Otherwise, you only calculate the distance penalty relative to the predicted values, which (I assume)
+            could lead to a local minimum rather than a global.  
+            """
             return means.max() - means
         case "minimize":
             return means
@@ -222,7 +228,7 @@ def distance_penalty(means: torch.Tensor, config_dict):
             return dist
         case _:
             raise ValueError("distance_penalty: invalid optimization_mode")
-    return 
+    return """#REVIEW Unnecessary return statement"""
 
 def calculate_acquisition(distance_penalty, uncertainties, beta):
     proximity = distance_penalty.max() - distance_penalty   
@@ -279,6 +285,7 @@ def train_and_inference_classification(train_data, inference_data, config_dict):
     tgt_idx = target_index(config_dict)
     means = prediction.mean[tgt_idx]
     uncer = prediction.covariance_matrix[tgt_idx].diag()
+    """#REVIEW Think about how to reuse the acquisition function from regression without having to redefine it here"""
     scores = means + config_dict['coefficient'] * uncer
     return scores, means, uncer
 
