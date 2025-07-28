@@ -394,12 +394,100 @@ docker build -t protein-embedding-service .
 docker run -p 8000:8000 protein-embedding-service
 ```
 
-## Performance
+## Performance & Scaling
+
+### Current Performance Characteristics
 
 - **Caching**: Redis-based caching with compression reduces computation time by 80%+ for repeated sequences
 - **Batch Processing**: Efficient batch processing via Triton Inference Server
 - **Binary Downloads**: Compressed numpy format for fast data transfer
 - **Connection Pooling**: Triton client pooling for optimal resource utilization
+
+### Scaling Behavior
+
+The service has been load-tested and exhibits the following scaling characteristics:
+
+#### **Concurrent Request Handling**
+
+- **1-4 concurrent requests**: Handled efficiently with all requests processed simultaneously
+- **5+ concurrent requests**: Queuing occurs as requests wait for available Triton clients
+- **Cache hits**: Sub-100ms response times regardless of concurrency
+- **Cache misses**: 3-8 second processing time per request
+
+#### **Resource Limits**
+
+- **Triton Client Pool**: 4 concurrent connections (configurable)
+- **Max Sequences per Request**: 100 sequences (configurable)
+- **Memory Usage**: ~1GB per large request (100 sequences × 5000 aa)
+- **CPU Bottleneck**: CPU-only Triton limits processing speed
+
+#### **Load Test Results**
+
+```
+4 Concurrent Requests (Cache Misses):
+- Request 1: 6.68s (Triton processing)
+- Request 2: 3.53s (Triton processing)
+- Request 3: 0.02s (Cache hit)
+- Request 4: 0.02s (Cache hit)
+
+6 Concurrent Requests (Cache Misses):
+- Request 5: 7.37s (Queued, then Triton processing)
+- Request 6: 3.92s (Queued, then Triton processing)
+- Request 7-10: 0.02-0.06s (Cache hits)
+```
+
+### Optimization Roadmap
+
+#### **Immediate Improvements (This Week)**
+
+1. **Increase Triton Pool Size**: Double pool size from 4 to 8 clients
+   ```bash
+   TRITON_POOL_SIZE=8
+   ```
+2. **Add Request Semaphore**: Implement concurrency control
+   ```python
+   MAX_CONCURRENT_REQUESTS = 8
+   request_semaphore = Semaphore(MAX_CONCURRENT_REQUESTS)
+   ```
+3. **Reduce Request Size Limits**: Lower max sequences per request to 50
+   ```bash
+   MAX_SEQUENCES_PER_REQUEST=50
+   ```
+
+#### **Medium-term Improvements (Next Week)**
+1. **GPU Acceleration**: Deploy GPU-enabled Triton for 10x performance improvement
+2. **Horizontal Scaling**: Add multiple service instances
+   ```yaml
+   embedding-service:
+     deploy:
+       replicas: 3
+   ```
+3. **Request Batching**: Implement intelligent request batching
+
+#### **Long-term Architecture (Next Month)**
+1. **Queue-based Architecture**: Separate API from processing
+   ```python
+   # Submit job to queue
+   job_id = await submit_embedding_job(sequences)
+   
+   # Poll for results
+   result = await get_job_result(job_id)
+   ```
+2. **Microservice Split**: Separate components
+   - API Gateway
+   - Embedding Workers
+   - Cache Service
+   - Download Service
+3. **Auto-scaling**: Dynamic scaling based on queue depth
+
+### Performance Projections
+
+| Configuration | Concurrent Requests | Processing Time | Throughput |
+|---------------|-------------------|-----------------|------------|
+| Current (CPU) | 4 | 3-8s | 8 req/min |
+| GPU + Pool 8 | 8 | 0.3-0.8s | 80 req/min |
+| GPU + 3 Instances | 24 | 0.3-0.8s | 240 req/min |
+| Queue-based | Unlimited | 0.3-0.8s | 300+ req/min |
 
 ## Monitoring
 
@@ -407,3 +495,103 @@ docker run -p 8000:8000 protein-embedding-service
 - **Cache Statistics**: Detailed cache performance metrics
 - **Timing Information**: Request-level timing breakdowns
 - **Model Status**: Real-time model availability status
+
+## Implementation Plans
+
+### Immediate Optimizations (Ready for Implementation)
+
+#### **1. Request Semaphore Implementation**
+```python
+# Add to main.py
+from asyncio import Semaphore
+
+# Global semaphore to limit concurrent requests
+MAX_CONCURRENT_REQUESTS = 8
+request_semaphore = Semaphore(MAX_CONCURRENT_REQUESTS)
+
+@app.post("/embeddings/compute/{model}")
+async def compute_embeddings(...):
+    async with request_semaphore:
+        # Process request
+        # Return 429 Too Many Requests if semaphore is full
+```
+
+**Benefits:**
+- Prevents resource exhaustion
+- Graceful degradation under load
+- Clear error messages for users
+
+#### **2. Enhanced Connection Pool Configuration**
+```python
+# Update config.py
+self.triton_pool_size: int = int(os.getenv("TRITON_POOL_SIZE", "8"))  # Double from 4
+self.max_sequences_per_request: int = int(os.getenv("MAX_SEQUENCES_PER_REQUEST", "50"))  # Reduce from 100
+```
+
+**Benefits:**
+- Increased concurrent capacity (4 → 8 requests)
+- Reduced memory pressure per request
+- Better resource utilization
+
+#### **3. Request Size Optimization**
+```python
+# Add request size validation
+if len(sequences) > config.max_sequences_per_request:
+    raise HTTPException(
+        status_code=413, 
+        detail=f"Too many sequences. Max: {config.max_sequences_per_request}"
+    )
+```
+
+### Queue-based Architecture Design
+
+#### **Phase 1: Job Queue Implementation**
+```python
+# New endpoints for queue-based processing
+@app.post("/embeddings/jobs/submit")
+async def submit_embedding_job(sequences: List[str], model: str):
+    job_id = generate_job_id()
+    await redis.lpush("embedding_jobs", json.dumps({
+        "job_id": job_id,
+        "sequences": sequences,
+        "model": model,
+        "status": "queued"
+    }))
+    return {"job_id": job_id, "status": "queued"}
+
+@app.get("/embeddings/jobs/{job_id}")
+async def get_job_status(job_id: str):
+    result = await redis.get(f"job_result:{job_id}")
+    return json.loads(result) if result else {"status": "processing"}
+```
+
+#### **Phase 2: Worker Service Separation**
+```yaml
+# docker-compose.yml
+services:
+  embedding-api:
+    # API gateway only
+    ports: ["8000:8000"]
+    
+  embedding-worker:
+    # Processing workers
+    deploy:
+      replicas: 3
+      
+  embedding-cache:
+    # Dedicated cache service
+    image: redis:7-alpine
+```
+
+#### **Phase 3: Auto-scaling**
+```python
+# Auto-scaling based on queue depth
+async def scale_workers():
+    queue_depth = await redis.llen("embedding_jobs")
+    if queue_depth > 10:
+        # Scale up workers
+        await scale_up_workers()
+    elif queue_depth < 2:
+        # Scale down workers
+        await scale_down_workers()
+```

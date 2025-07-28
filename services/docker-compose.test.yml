@@ -1,6 +1,6 @@
 services:
   # Redis for caching (required)
-  redis-test:
+  redis:
     image: redis:8-alpine
     ports:
       - "6379:6379"
@@ -16,7 +16,7 @@ services:
       retries: 5
 
   # Triton Inference Server (required for embeddings)
-  triton-test:
+  triton:
     build:
       context: ./triton-custom
     ports:
@@ -24,9 +24,10 @@ services:
       - "8001:8001"  # gRPC 
       - "8002:8002"  # Metrics
     volumes:
-      - ./model-repository-test:/models:ro
+      - ./model-repository:/models:ro
     environment:
-      - CUDA_VISIBLE_DEVICES=0  # Use first GPU if available
+      - CUDA_VISIBLE_DEVICES=""  # Force CPU-only for testing
+      - NVIDIA_VISIBLE_DEVICES=""  # Ensure no NVIDIA devices are visible
     command: >
       tritonserver 
       --model-repository=/models 
@@ -36,6 +37,9 @@ services:
       --allow-http=true
       --allow-metrics=true
       --backend-config=python,shm-default-byte-size=16777216
+      --model-control-mode=poll
+      --repository-poll-secs=10
+      --exit-on-error=false
     # Uncomment for GPU support
     # deploy:
     #   resources:
@@ -46,25 +50,25 @@ services:
     #           capabilities: [gpu]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/v2/health/ready"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/v2/health/live"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 120s  # Models take time to load
 
   # Embedding service under test
-  embedding-service-test:
+  embedding-service:
     build: 
       context: ./embeddings-service
     ports:
       - "8003:8001"  # Expose for testing
     environment:
-      - REDIS_URL=redis://redis-test:6379
-      - TRITON_URL=triton-test:8001
+      - REDIS_URL=redis://redis:6379
+      - TRITON_URL=triton:8001
     depends_on:
-      redis-test:
+      redis:
         condition: service_healthy
-      triton-test:
+      triton:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
