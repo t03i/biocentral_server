@@ -22,6 +22,7 @@ from .models import (
 from .utils import validate_protein_sequences
 from .triton_client import TritonClientPool, TritonEmbeddingClient
 from .cache import EmbeddingCache
+from .download_storage import DownloadStorage
 
 # Configure logging
 logging.basicConfig(
@@ -33,11 +34,12 @@ logger = logging.getLogger(__name__)
 # Global components
 triton_pools: Dict[str, TritonClientPool] = {}
 embedding_cache: Optional[EmbeddingCache] = None
+download_storage: Optional[DownloadStorage] = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage service lifecycle"""
-    global triton_pools, embedding_cache
+    global triton_pools, embedding_cache, download_storage
     
     # Startup
     logger.info("Starting Protein Embedding Service")
@@ -51,6 +53,9 @@ async def lifespan(app: FastAPI):
             compression_level=config.redis_compression_level
         )
         await embedding_cache.connect()
+        
+        # Initialize download storage
+        download_storage = DownloadStorage(embedding_cache)
         
         # Initialize Triton client pools for each model
         for model_type, model_config in MODEL_CONFIG.items():
@@ -102,51 +107,7 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Redis storage for downloads
-async def _store_for_download(request_id: str, embeddings: List, sequences: List[str], model_config: Dict):
-    """Store embeddings as binary data in Redis for download with 10-minute TTL"""
-    if not embedding_cache:
-        logger.warning("Cache not available, cannot store for download")
-        return
-    
-    try:
-        # Store each embedding as a separate array (sequences typically have different lengths)
-        # Convert each embedding to binary and store as a list
-        binary_embeddings = []
-        for emb in embeddings:
-            emb_array = np.array(emb, dtype=np.float16)
-            binary_embeddings.append({
-                'shape': emb_array.shape,
-                'dtype': str(emb_array.dtype),
-                'data': emb_array.tobytes()
-            })
-        
-        binary_data = json.dumps(binary_embeddings)
-        shape_info = {
-            'storage_type': 'list_of_arrays',
-            'count': len(binary_embeddings)
-        }
-        
-        # Store binary embeddings and shape info
-        binary_key = f"download:{request_id}"
-        shape_key = f"download:{request_id}:shape"
-        
-        await embedding_cache._redis.setex(
-            binary_key,
-            config.download_ttl_minutes * 60,  # 10 minutes in seconds
-            binary_data  # Store as JSON string
-        )
-        
-        await embedding_cache._redis.setex(
-            shape_key,
-            config.download_ttl_minutes * 60,  # 10 minutes in seconds
-            json.dumps(shape_info)  # Store shape info as JSON
-        )
-        
-        logger.debug(f"Stored {len(binary_embeddings)} embeddings for {request_id} with {config.download_ttl_minutes}min TTL")
-        
-    except Exception as e:
-        logger.error(f"Failed to store embeddings: {e}")
+# Download storage functionality moved to download_storage.py module
 
 # Endpoints
 @app.post("/embeddings/compute/{model}", response_model=EmbeddingResponse)
@@ -274,13 +235,16 @@ async def compute_embeddings(
         
         # Store the requested variant (pooled or unpooled) in Redis for download
         # This ensures the download matches exactly what was requested
-        background_tasks.add_task(
-            _store_for_download,
-            request_id,
-            all_embeddings,  # This is already the requested variant (pooled or unpooled)
-            sequences,
-            model_config
-        )
+        if download_storage:
+            background_tasks.add_task(
+                download_storage.store_for_download,
+                request_id,
+                all_embeddings,  # This is already the requested variant (pooled or unpooled)
+                sequences,
+                model_config
+            )
+        else:
+            logger.warning("Download storage not available, skipping download storage")
         
         return EmbeddingResponse(
             sequences=sequences,
@@ -295,7 +259,7 @@ async def compute_embeddings(
                 "cache_ms": cache_time * 1000,
                 "triton_ms": triton_time * 1000,
                 "cache_hits": cache_hits,
-                "triton_calls": len(missing_sequences)
+                "triton_calls": 1 if missing_sequences else 0  # Single batch call if there are missing sequences
             },
             model_info={
                 "model": model,
@@ -337,30 +301,15 @@ async def download_numpy_compressed(model: str, request_id: str):
         GET /embeddings/download/prot_t5/numpy/1703123456_12345
         # Returns: embeddings_prot_t5_1703123456_12345.npz
     """
-    if not embedding_cache:
-        raise HTTPException(status_code=503, detail="Cache not available")
+    if not download_storage:
+        raise HTTPException(status_code=503, detail="Download storage not available")
     
     try:
-        # Retrieve stored binary embeddings and shape info from Redis
-        binary_key = f"download:{request_id}"
-        shape_key = f"download:{request_id}:shape"
+        # Retrieve stored embeddings using the download storage module
+        embeddings_array = await download_storage.retrieve_for_download(request_id)
         
-        binary_data = await embedding_cache._redis.get(binary_key)
-        shape_data = await embedding_cache._redis.get(shape_key)
-        
-        if not binary_data or not shape_data:
+        if embeddings_array is None:
             raise HTTPException(status_code=404, detail="Download not found or expired")
-        
-        # Parse shape info and reconstruct embeddings
-        shape_info = json.loads(shape_data)
-        binary_embeddings_list = json.loads(binary_data)
-        
-        embeddings_array = []
-        for item in binary_embeddings_list:
-            shape = tuple(item['shape'])
-            dtype = item['dtype']
-            data = item['data']
-            embeddings_array.append(np.frombuffer(data, dtype=dtype).reshape(shape))
         
         # Create compressed numpy file in memory
         # Store each embedding with its sequence index
