@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  # Keep existing legacy service unchanged
+  legacy-service:
+    build: .  # Uses existing Dockerfile
+    ports:
+      - "9540:9540"
+    environment:
+      - REDIS_JOBS_HOST=redis-jobs
+      - REDIS_JOBS_PORT=6379
+    depends_on:
+      - redis-jobs
+    volumes:
+      - ./storage:/app/storage
+      - ./logs:/app/logs
+
+  # New embedding service
+  embedding-service:
+    build: 
+      context: ./services
+      dockerfile: embeddings-service/Dockerfile
+    environment:
+      - REDIS_URL=redis://redis-jobs:6379
+    depends_on:
+      - redis-jobs
+      - legacy-service  # Ensure legacy service starts first
+    volumes:
+      - ./storage:/app/storage  # Share storage with legacy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # New prediction service  
+  prediction-service:
+    build:
+      context: ./services
+      dockerfile: prediction-service/Dockerfile
+    environment:
+      - REDIS_URL=redis://redis-jobs:6379
+    depends_on:
+      - redis-jobs
+      - legacy-service
+    volumes:
+      - ./storage:/app/storage  # Share storage with legacy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8002/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Caddy reverse proxy
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - ./logs/caddy:/var/log/caddy
+    depends_on:
+      - legacy-service
+      - embedding-service
+      - prediction-service
+
+  # Redis for queues and caching (no PostgreSQL needed for new services)
+  redis-jobs:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    command: |
+      redis-server 
+      --maxmemory 2gb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+    volumes: ["redis_data:/data"]
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  caddy_data:
+  caddy_config:

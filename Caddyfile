@@ -1,0 +1,79 @@
+biocentral.localhost {
+    # New FastAPI services - Route to new microservices
+    handle_path /embeddings/* {
+        reverse_proxy embedding-service:8001
+    }
+
+    handle_path /predictions/* {
+        reverse_proxy prediction-service:8002
+    }
+
+    # Legacy Flask endpoints - Route to existing biocentral_server
+    handle_path /embeddings_service/* {
+        reverse_proxy legacy-service:9540
+    }
+
+    handle_path /prediction_service/* {
+        reverse_proxy legacy-service:9540
+    }
+
+    # All other biocentral endpoints go to legacy service
+    handle_path /biocentral_service/* {
+        reverse_proxy legacy-service:9540
+    }
+
+    handle_path /ppi_service/* {
+        reverse_proxy legacy-service:9540
+    }
+
+    handle_path /protein_service/* {
+        reverse_proxy legacy-service:9540
+    }
+
+    handle_path /prediction_models_service/* {
+        reverse_proxy legacy-service:9540
+    }
+
+    handle_path /protein_analysis_service/* {
+        reverse_proxy legacy-service:9540
+    }
+
+    handle_path /plm_eval_service/* {
+        reverse_proxy legacy-service:9540
+    }
+
+    handle_path /bayesian_optimization_service/* {
+        reverse_proxy legacy-service:9540
+    }
+
+    # Default route - all other requests go to legacy service
+    handle {
+        reverse_proxy legacy-service:9540
+    }
+
+    # Enable logging for debugging migration
+    log {
+        output file /var/log/caddy/biocentral.log
+        format json
+        level INFO
+    }
+}
+
+  # Health check endpoint
+  health.biocentral.localhost {
+      handle /embedding {
+          reverse_proxy embedding-service:8001/health
+      }
+
+      handle /prediction {
+          reverse_proxy prediction-service:8002/health
+      }
+
+      handle /legacy {
+          reverse_proxy legacy-service:9540/biocentral_service/server_status
+      }
+
+      handle {
+          respond "Biocentral Services Health Check" 200
+      }
+  }

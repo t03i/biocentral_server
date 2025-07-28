@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "biocentral-embedding-service"
+version = "0.1.0"
+description = "Embedding computation service with Redis caching"
+requires-python = ">=3.11"
+
+dependencies = [
+    # FastAPI stack
+    "fastapi>=0.104.0,<1.0.0",
+    "uvicorn[standard]>=0.24.0,<1.0.0",
+    "pydantic>=2.5.0,<3.0.0",
+    
+    # Core ML dependencies  
+    "torch>=2.1.0,<3.0.0",
+    "transformers>=4.35.0,<5.0.0",
+    "numpy>=1.24.0,<2.0.0",
+    
+    # Biotrainer for embeddings (TODO: integrate existing biocentral_server logic)
+    "biotrainer @ git+https://github.com/sacdallago/biotrainer.git@develop",
+    
+    # Redis for caching and queues (no PostgreSQL needed)
+    "redis>=5.0.0,<6.0.0",
+    "rq>=2.1.0,<3.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "httpx>=0.25.0",
+    "ruff>=0.1.0",
+]
+
+gpu = [
+    "onnxruntime-gpu>=1.16.0,<2.0.0",
+]
+
+cpu = [
+    "onnxruntime>=1.16.0,<2.0.0", 
+]
