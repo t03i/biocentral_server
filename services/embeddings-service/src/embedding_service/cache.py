@@ -74,13 +74,9 @@ class EmbeddingCache:
             # Store shape information for reconstruction
             shape_bytes = np.array(embedding_f32.shape, dtype=np.int32).tobytes()
             
-            # Compress with BLOSC2 (optimized for numerical data)
-            compressed_data = blosc2.compress2(
-                embedding_f32.tobytes(),
-                codec='lz4',  # Fast compression/decompression
-                clevel=self.compression_level,
-                shuffle=blosc2.Shuffle.BYTE  # Byte shuffle for better compression
-            )
+            # Use simple compression for now (can be improved later)
+            import gzip
+            compressed_data = gzip.compress(embedding_f32.tobytes(), compresslevel=self.compression_level)
             
             # Combine shape info and compressed data
             shape_size = len(shape_bytes)
@@ -115,7 +111,8 @@ class EmbeddingCache:
             shape = tuple(np.frombuffer(shape_bytes, dtype=np.int32))
             
             # Decompress
-            decompressed = blosc2.decompress2(actual_compressed_data)
+            import gzip
+            decompressed = gzip.decompress(actual_compressed_data)
             
             # Reconstruct numpy array with original shape
             embedding = np.frombuffer(decompressed, dtype=np.float32).reshape(shape)

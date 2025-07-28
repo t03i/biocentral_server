@@ -17,9 +17,6 @@ COPY pyproject.toml uv.lock* ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-install-project
 
-# Copy the project source code
-COPY . .
-
 # Install the project
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked
@@ -33,3 +30,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 
 # Run the application using uv with proper module path
 CMD ["uv", "run", "fastapi", "run", "src/embedding_service/main.py", "--host", "0.0.0.0", "--port", "8001"]
+
+# Copy the project source code
+COPY . .
