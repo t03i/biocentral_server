@@ -1,3 +1,0 @@
-# Placeholder for ESM-2 T36 3B ONNX model
-# This file should be replaced with the actual ONNX model during deployment
-# The model should output 2560-dimensional embeddings 

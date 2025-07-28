@@ -1,2 +1,4 @@
-_internal_onnx/1/
-_internal_tokenizer/1/
+!esm2_tokenizer/1/model.py
+!prot_t5_tokenizer/1/model.py
+!seth_postprocess/1/model.py
+*/1/

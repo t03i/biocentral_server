@@ -1,3 +1,0 @@
-# Placeholder for ESM-2 T33 650M ONNX model
-# This file should be replaced with the actual ONNX model during deployment
-# The model should output 1280-dimensional embeddings 
