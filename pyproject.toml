@@ -12,19 +12,21 @@ requires-python = ">=3.11.9,<3.14"
 
 dependencies = [
     # Backend
-    "flask>=3.0.2,<4.0.0",
-    "levenshtein>=0.26.1,<1.0.0",
-    "taxoniq>=1.0.1,<2.0.0",
-    "blosc2>=2.7.1,<3.0.0",
-    "psycopg[binary]>=3.2.3,<4.0.0",
-    "gunicorn>=23.0.0,<24.0.0",
-    "rq>=2.1.0,<3.0.0",
-    "python-dotenv>=1.0.1,<2.0.0",
+    "flask>=3.0.2,<4",
+    "levenshtein>=0.26,<1",
+    "taxoniq>=1.0,<2",
+    "blosc2>=3.6,<4",
+    "psycopg[binary]>=3.2,<4.0",
+    "gunicorn>=23.0,<24",
+    "rq>=2.1,<3.0",
+    "python-dotenv>=1.0,<2.0.0",
     "gpytorch>=1.14,<2.0",
-    "onnxruntime-gpu>=1.16.0,<2.0.0",  # Replace with onnxruntime for cpu / onnxruntime-coreml for Darwin
+    "onnx>=1.18,<2.0",
+    'onnxruntime>=1.22,<2.0; platform_system == "Darwin"',  # For MacOS
+    'onnxruntime-gpu>=1.22,<2.0; platform_system != "Darwin"',     # For Linux/Windows with GPU
 
     # Git Dependencies
-    "biotrainer @ git+https://github.com/sacdallago/biotrainer.git@develop",
+    #"biotrainer @ git+https://github.com/sacdallago/biotrainer.git@develop",
     "protspace @ git+https://github.com/tsenoner/protspace.git@v2.0.0",
     "hvi_toolkit @ git+https://github.com/SebieF/hvi_toolkit.git@maintenance/update-biotrainer",
     "vespag @ git+https://github.com/biocentral/VespaG.git@onnx-deployment",
