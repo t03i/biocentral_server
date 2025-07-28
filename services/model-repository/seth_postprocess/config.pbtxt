@@ -1,4 +1,4 @@
-name: "disorder_postprocess"
+name: "seth_postprocess"
 backend: "python"
 max_batch_size: 16
 
@@ -21,6 +21,6 @@ output [
 instance_group [
   {
     count: 1
-    kind: KIND_CPU
+    kind: KIND_AUTO
   }
 ]

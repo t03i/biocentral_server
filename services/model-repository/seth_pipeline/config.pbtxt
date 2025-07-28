@@ -1,4 +1,4 @@
-name: "disorder_ensemble"
+name: "seth_pipeline"
 platform: "ensemble"
 max_batch_size: 16
 
@@ -21,7 +21,7 @@ output [
 ensemble_scheduling {
   step [
     {
-      model_name: "disorder_onnx"
+      model_name: "seth"
       model_version: 1
       input_map {
         key: "embeddings"
@@ -33,7 +33,7 @@ ensemble_scheduling {
       }
     },
     {
-      model_name: "disorder_postprocess"
+      model_name: "seth_postprocess"
       model_version: 1
       input_map {
         key: "raw_scores"
@@ -46,10 +46,3 @@ ensemble_scheduling {
     }
   ]
 }
-
-instance_group [
-  {
-    count: 1
-    kind: KIND_GPU
-  }
-]

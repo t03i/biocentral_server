@@ -1,4 +1,4 @@
-name: "disorder_onnx"
+name: "seth"
 platform: "onnxruntime_onnx"
 max_batch_size: 16
 
@@ -14,7 +14,7 @@ output [
   {
     name: "output"
     data_type: TYPE_FP32
-    dims: [ -1, 2 ]  # Binary classification (ordered/disordered)
+    dims: [ -1, 1 ]  # Per-residue disorder predictions (batch dim added automatically)
   }
 ]
 
@@ -26,6 +26,6 @@ dynamic_batching {
 instance_group [
   {
     count: 1
-    kind: KIND_GPU
+    kind: KIND_AUTO
   }
 ]

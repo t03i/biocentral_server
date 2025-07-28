@@ -1,4 +1,4 @@
-name: "subcellular_localization_model"
+name: "light_attention_subcell"
 platform: "onnxruntime_onnx"
 max_batch_size: 16
 
@@ -26,6 +26,6 @@ dynamic_batching {
 instance_group [
   {
     count: 1
-    kind: KIND_GPU
+    kind: KIND_AUTO
   }
 ]

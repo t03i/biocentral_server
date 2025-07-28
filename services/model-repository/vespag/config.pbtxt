@@ -26,6 +26,6 @@ dynamic_batching {
 instance_group [
   {
     count: 1
-    kind: KIND_GPU
+    kind: KIND_AUTO
   }
 ] 

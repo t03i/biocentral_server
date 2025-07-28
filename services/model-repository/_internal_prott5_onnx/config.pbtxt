@@ -31,6 +31,6 @@ dynamic_batching {
 instance_group [
   {
     count: 1
-    kind: KIND_CPU
+    kind: KIND_AUTO
   }
 ] 
