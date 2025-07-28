@@ -1,5 +1,5 @@
 """
-Redis cache component with compression for ProtT5 embeddings
+Redis cache component with compression for protein embeddings (ProtT5 and ESM-2)
 """
 import asyncio
 import hashlib
@@ -15,14 +15,14 @@ logger = logging.getLogger(__name__)
 
 class EmbeddingCache:
     """
-    High-performance Redis cache for ProtT5 embeddings with BLOSC2 compression
+    High-performance Redis cache for protein embeddings (ProtT5 and ESM-2) with BLOSC2 compression
     """
     
     def __init__(
         self,
         redis_url: str = "redis://redis-jobs:6379",
         ttl: int = 7 * 24 * 3600,  # 1 week
-        key_prefix: str = "prot_t5_emb",
+        key_prefix: str = "protein_emb",
         compression_level: int = 5  # BLOSC2 compression level (1-9)
     ):
         self.redis_url = redis_url
@@ -61,7 +61,7 @@ class EmbeddingCache:
         """Generate consistent hash for sequence"""
         return hashlib.sha256(sequence.encode('utf-8')).hexdigest()[:16]
         
-    def _cache_key(self, sequence_hash: str, model_name: str = "prot_t5") -> str:
+    def _cache_key(self, sequence_hash: str, model_name: str) -> str:
         """Generate Redis cache key"""
         return f"{self.key_prefix}:{model_name}:{sequence_hash}"
         
@@ -71,26 +71,33 @@ class EmbeddingCache:
             # Ensure float32 for consistency
             embedding_f32 = embedding.astype(np.float32)
             
+            # Store shape information for reconstruction
+            shape_bytes = np.array(embedding_f32.shape, dtype=np.int32).tobytes()
+            
             # Compress with BLOSC2 (optimized for numerical data)
-            compressed = blosc2.compress2(
+            compressed_data = blosc2.compress2(
                 embedding_f32.tobytes(),
                 codec='lz4',  # Fast compression/decompression
                 clevel=self.compression_level,
                 shuffle=blosc2.Shuffle.BYTE  # Byte shuffle for better compression
             )
             
+            # Combine shape info and compressed data
+            shape_size = len(shape_bytes)
+            result = shape_size.to_bytes(4, 'little') + shape_bytes + compressed_data
+            
             # Update compression ratio stats
             original_size = embedding_f32.nbytes
-            compressed_size = len(compressed)
+            compressed_size = len(result)
             ratio = compressed_size / original_size if original_size > 0 else 1.0
             self.stats["compression_ratio"] = (
                 self.stats["compression_ratio"] * 0.9 + ratio * 0.1
             )  # Exponential moving average
             
             logger.debug(f"Compressed embedding: {original_size}B -> {compressed_size}B "
-                        f"(ratio: {ratio:.3f})")
+                        f"(ratio: {ratio:.3f}) shape: {embedding_f32.shape}")
             
-            return compressed
+            return result
             
         except Exception as e:
             logger.error(f"Compression failed: {e}")
@@ -99,13 +106,22 @@ class EmbeddingCache:
     def _decompress_embedding(self, compressed_data: bytes) -> np.ndarray:
         """Decompress embedding from BLOSC2"""
         try:
+            # Extract shape information
+            shape_size = int.from_bytes(compressed_data[:4], 'little')
+            shape_bytes = compressed_data[4:4+shape_size]
+            actual_compressed_data = compressed_data[4+shape_size:]
+            
+            # Reconstruct shape
+            shape = tuple(np.frombuffer(shape_bytes, dtype=np.int32))
+            
             # Decompress
-            decompressed = blosc2.decompress2(compressed_data)
+            decompressed = blosc2.decompress2(actual_compressed_data)
             
-            # Reconstruct numpy array (ProtT5 outputs 1024-dim)
-            embedding = np.frombuffer(decompressed, dtype=np.float32)
+            # Reconstruct numpy array with original shape
+            embedding = np.frombuffer(decompressed, dtype=np.float32).reshape(shape)
             
-            logger.debug(f"Decompressed embedding: {len(compressed_data)}B -> {embedding.nbytes}B")
+            logger.debug(f"Decompressed embedding: {len(compressed_data)}B -> {embedding.nbytes}B "
+                        f"shape: {embedding.shape}")
             
             return embedding
             
@@ -116,14 +132,14 @@ class EmbeddingCache:
     async def get_embeddings(
         self, 
         sequences: List[str], 
-        model_name: str = "prot_t5"
+        model_name: str
     ) -> Dict[str, Optional[np.ndarray]]:
         """
         Get embeddings from cache for multiple sequences
         
         Args:
             sequences: List of protein sequences
-            model_name: Model identifier for cache key
+            model_name: Model identifier for cache key (e.g., "prot_t5", "esm2_t33_650M")
             
         Returns:
             Dict mapping sequences to embeddings (None if not cached)
@@ -172,7 +188,7 @@ class EmbeddingCache:
                 await pipe.execute()
                 
             hit_count = len([v for v in results.values() if v is not None])
-            logger.info(f"Cache lookup: {hit_count}/{len(sequences)} hits "
+            logger.info(f"Cache lookup ({model_name}): {hit_count}/{len(sequences)} hits "
                        f"({redis_time*1000:.1f}ms Redis)")
                        
             return results
@@ -186,14 +202,14 @@ class EmbeddingCache:
     async def set_embeddings(
         self,
         sequence_embeddings: Dict[str, np.ndarray],
-        model_name: str = "prot_t5"
+        model_name: str
     ) -> bool:
         """
         Store embeddings in cache with compression
         
         Args:
             sequence_embeddings: Dict mapping sequences to embeddings
-            model_name: Model identifier for cache key
+            model_name: Model identifier for cache key (e.g., "prot_t5", "esm2_t33_650M")
             
         Returns:
             Success status
@@ -224,7 +240,7 @@ class EmbeddingCache:
             cache_time = time.time() - start_time
             self.stats["sets"] += len(sequence_embeddings)
             
-            logger.info(f"Cached {len(sequence_embeddings)} embeddings "
+            logger.info(f"Cached {len(sequence_embeddings)} embeddings ({model_name}) "
                        f"({cache_time*1000:.1f}ms)")
                        
             return True
