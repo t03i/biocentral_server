@@ -3,6 +3,7 @@ Production Protein Embedding Service with Triton gRPC and Redis Caching (ProtT5 
 """
 import asyncio
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
 from typing import List, Dict, Optional
@@ -60,8 +61,9 @@ async def lifespan(app: FastAPI):
     
     try:
         # Initialize Redis cache
+        redis_url = os.getenv("REDIS_URL", "redis://redis-jobs:6379")
         embedding_cache = EmbeddingCache(
-            redis_url="redis://redis-jobs:6379",
+            redis_url=redis_url,
             ttl=7 * 24 * 3600,  # 1 week
             compression_level=5
         )
