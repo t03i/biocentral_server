@@ -12,8 +12,8 @@ import numpy as np
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field, validator
 
-from triton_client import TritonClientPool
-from cache import EmbeddingCache
+from .triton_client import TritonClientPool
+from .cache import EmbeddingCache
 
 # Configure logging
 logging.basicConfig(
@@ -394,12 +394,3 @@ async def root():
         ]
     }
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(
-        app, 
-        host="0.0.0.0", 
-        port=8001,
-        log_level="info",
-        access_log=True
-    )
