@@ -14,13 +14,12 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 # Copy service files
 COPY pyproject.toml .
 COPY main.py .
+COPY triton_predictor.py .
 
 # Install dependencies
 RUN uv pip install --system --no-cache -e .
 
-# Install shared utilities from parent directory
-COPY ../shared /shared
-RUN uv pip install --system --no-cache -e /shared
+# No shared utilities needed for Triton-based service
 
 EXPOSE 8002
 
