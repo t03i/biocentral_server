@@ -7,3 +7,9 @@
 /releases/
 __pycache__/
 *ipynb
+
+
+.DS_Store
+**/.DS_Store
+docs/internal/
+CLAUDE.md
