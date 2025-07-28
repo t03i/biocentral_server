@@ -64,22 +64,22 @@ services:
       retries: 3
       start_period: 60s
 
-  # New prediction service  
+  # New prediction service with Triton integration
   prediction-service:
     build:
       context: ./services/prediction-service
     environment:
-      - REDIS_URL=redis://redis-jobs:6379
+      - TRITON_URL=triton:8001
+      - EMBEDDINGS_SERVICE_URL=http://embedding-service:8001
     depends_on:
-      - redis-jobs
-      - legacy-service
-    volumes:
-      - ./storage:/app/storage  # Share storage with legacy
+      - triton
+      - embedding-service
     healthcheck:
       test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8002/health', timeout=5).raise_for_status()"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 90s
 
   # Caddy reverse proxy
   caddy:
