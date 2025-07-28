@@ -1,9 +1,10 @@
 FROM python:3.11-slim
 
-# Install system dependencies
+# Install system dependencies for gRPC and compilation
 RUN apt-get update && apt-get install -y \
     git \
     build-essential \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -14,18 +15,17 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 # Copy service files
 COPY pyproject.toml .
 COPY main.py .
+COPY triton_client.py .
+COPY cache.py .
 
-# Install dependencies
+# Install dependencies (no shared utilities needed)
 RUN uv pip install --system --no-cache -e .
-
-# Install shared utilities from parent directory
-COPY ../shared /shared
-RUN uv pip install --system --no-cache -e /shared
 
 EXPOSE 8001
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:8001/health')"
+# Health check using the service's own health endpoint
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python -c "import httpx; httpx.get('http://localhost:8001/embeddings/health', timeout=5).raise_for_status()"
 
+# Run the FastAPI service
 CMD ["python", "main.py"]

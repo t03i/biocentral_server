@@ -15,29 +15,59 @@ services:
       - ./storage:/app/storage
       - ./logs:/app/logs
 
-  # New embedding service
+  # Triton Inference Server for ProtT5 embeddings
+  triton:
+    image: nvcr.io/nvidia/tritonserver:23.10-py3
+    ports:
+      - "8000:8000"  # HTTP
+      - "8001:8001"  # gRPC 
+      - "8002:8002"  # Metrics
+    volumes:
+      - ./services/model-repository:/models:ro
+    command: >
+      tritonserver 
+      --model-repository=/models 
+      --strict-model-config=false
+      --log-verbose=1
+      --allow-grpc=true
+      --allow-http=true
+      --allow-metrics=true
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/v2/health/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # New ProtT5 embedding service with Triton integration
   embedding-service:
     build: 
-      context: ./services
-      dockerfile: embeddings-service/Dockerfile
+      context: ./services/embeddings-service
     environment:
       - REDIS_URL=redis://redis-jobs:6379
+      - TRITON_URL=triton:8001
     depends_on:
       - redis-jobs
-      - legacy-service  # Ensure legacy service starts first
-    volumes:
-      - ./storage:/app/storage  # Share storage with legacy
+      - triton
     healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8001/health')"]
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8001/embeddings/health', timeout=5).raise_for_status()"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 60s
 
   # New prediction service  
   prediction-service:
     build:
-      context: ./services
-      dockerfile: prediction-service/Dockerfile
+      context: ./services/prediction-service
     environment:
       - REDIS_URL=redis://redis-jobs:6379
     depends_on:
@@ -46,7 +76,7 @@ services:
     volumes:
       - ./storage:/app/storage  # Share storage with legacy
     healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8002/health')"]
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8002/health', timeout=5).raise_for_status()"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -67,17 +97,24 @@ services:
       - embedding-service
       - prediction-service
 
-  # Redis for queues and caching (no PostgreSQL needed for new services)
+  # Redis for queues and embedding caching
   redis-jobs:
     image: redis:7-alpine
     ports: ["6379:6379"]
-    command: |
+    command: >
       redis-server 
-      --maxmemory 2gb
+      --maxmemory 4gb
       --maxmemory-policy allkeys-lru
       --save 900 1
+      --appendonly yes
+      --appendfsync everysec
     volumes: ["redis_data:/data"]
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
 volumes:
   redis_data:
