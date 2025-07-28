@@ -31,5 +31,5 @@ EXPOSE 8001
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD uv run python -c "import httpx; httpx.get('http://localhost:8001/embeddings/health', timeout=5).raise_for_status()"
 
-# Run the application using uv
-CMD ["uv", "run", "fastapi", "run", "src.embedding_service.main:app", "--host", "0.0.0.0", "--port", "8001"]
+# Run the application using uv with proper module path
+CMD ["uv", "run", "fastapi", "run", "src/embedding_service/main.py", "--host", "0.0.0.0", "--port", "8001"]
