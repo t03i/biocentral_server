@@ -1,0 +1,75 @@
+services:
+  # Redis for caching (required)
+  redis-test:
+    image: redis:8-alpine
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server 
+      --maxmemory 1gb
+      --maxmemory-policy allkeys-lru
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Triton Inference Server (required for embeddings)
+  triton-test:
+    build:
+      context: ./triton-custom
+    ports:
+      - "8000:8000"  # HTTP
+      - "8001:8001"  # gRPC 
+      - "8002:8002"  # Metrics
+    volumes:
+      - ./model-repository-test:/models:ro
+    environment:
+      - CUDA_VISIBLE_DEVICES=0  # Use first GPU if available
+    command: >
+      tritonserver 
+      --model-repository=/models 
+      --strict-model-config=false
+      --log-verbose=1
+      --allow-grpc=true
+      --allow-http=true
+      --allow-metrics=true
+      --backend-config=python,shm-default-byte-size=16777216
+    # Uncomment for GPU support
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/v2/health/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s  # Models take time to load
+
+  # Embedding service under test
+  embedding-service-test:
+    build: 
+      context: ./embeddings-service
+    ports:
+      - "8003:8001"  # Expose for testing
+    environment:
+      - REDIS_URL=redis://redis-test:6379
+      - TRITON_URL=triton-test:8001
+    depends_on:
+      redis-test:
+        condition: service_healthy
+      triton-test:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8001/embeddings/health', timeout=5).raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s 
